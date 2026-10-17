@@ -208,15 +208,11 @@ final class NativeBackend: @unchecked Sendable {
             }
             return try .json(.object(["ok": .bool(false), "error": .string("not_found")]), status: 404)
         case ("/api/stock-watch", "GET"):
-            return try await jsonFileResponse("stock-watch.json", fallback: .object([
-                "ok": .bool(true),
-                "items": .array([]),
-                "pollSec": .number(900),
-            ]))
+            return try await stockWatchResponse()
         case ("/api/stock-watch/check", "POST"):
             do {
                 try await sync.refresh(.stock)
-                return try await jsonFileResponse("stock-watch-state.json", fallback: .object(["ok": .bool(true)]))
+                return try await stockWatchResponse()
             } catch {
                 return try .json(.object([
                     "ok": .bool(false),
@@ -269,7 +265,8 @@ final class NativeBackend: @unchecked Sendable {
         let configured = await storage.secretConfigurationState()
         let vehicleKeys = [
             "NIO_VEHICLE_API_URL", "NIO_VEHICLE_USER_AGENT", "NIO_VEHICLE_API_METHOD",
-            "NIO_VEHICLE_POLL_DRIVING_SEC", "NIO_VEHICLE_POLL_DAY_SEC", "NIO_VEHICLE_POLL_NIGHT_SEC",
+            "NIO_VEHICLE_POLL_DRIVING_SEC", "NIO_VEHICLE_POLL_CHARGING_SEC",
+            "NIO_VEHICLE_POLL_DAY_SEC", "NIO_VEHICLE_POLL_NIGHT_SEC",
             "NIO_CHECKIN_API_URL", "NIO_VEHICLE_STATUS_URL", "NIO_JOURNEY_API_URL", "NIO_DAILY_API_URL",
         ]
         let changeKeys = [
@@ -352,6 +349,7 @@ final class NativeBackend: @unchecked Sendable {
             if path.hasSuffix("/vehicle/journey_merge/status") { urlUpdates["NIO_JOURNEY_API_URL"] = raw }
             if path.hasSuffix("/vehicle/journeys/daily_data") { urlUpdates["NIO_DAILY_API_URL"] = raw }
             if path.hasSuffix("/serviceOrder/getTabOrder") { urlUpdates["NIO_CHANGE_API_URL"] = raw }
+            if path.hasSuffix("/award_cn/checkin") { urlUpdates["NIO_CHECKIN_API_URL"] = raw }
         }
         if let token {
             for key in ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_CHANGE_ACCESS_TOKEN", "NIO_VEHICLE_EXTRA_TOKEN"] {
@@ -365,6 +363,22 @@ final class NativeBackend: @unchecked Sendable {
             try await storage.writeJSON(importedPower, relativePath: "power.json")
         }
         let ok = token != nil || !urlUpdates.isEmpty || importedPower != nil
+        var runs: [String: JSONValue] = [:]
+        let updatedKeys = Set(urlUpdates.keys)
+        let refreshTargets: [(SyncCoordinator.Target, Set<String>)] = [
+            (.vehicle, ["NIO_VEHICLE_API_URL", "NIO_VEHICLE_STATUS_URL", "NIO_JOURNEY_API_URL", "NIO_DAILY_API_URL",
+                        "NIO_VEHICLE_ACCESS_TOKEN"]),
+            (.change, ["NIO_CHANGE_API_URL", "NIO_CHANGE_ACCESS_TOKEN"]),
+            (.checkin, ["NIO_CHECKIN_API_URL"]),
+        ]
+        for (target, keys) in refreshTargets where !updatedKeys.isDisjoint(with: keys) {
+            do {
+                try await sync.refresh(target)
+                runs[target.rawValue] = .string("ok")
+            } catch {
+                runs[target.rawValue] = .string(error.localizedDescription)
+            }
+        }
         let result: JSONValue = .object([
             "ok": .bool(ok),
             "tokenUpdated": .bool(token != nil),
@@ -372,7 +386,7 @@ final class NativeBackend: @unchecked Sendable {
             "power": importedPower == nil ? .null : .string("家充数据已导入"),
             "warnings": .array(ok ? [] : [.string("没有找到可用的完整 URL 或 Bearer Token")]),
         ])
-        return try .json(.object(["ok": .bool(ok), "result": result]), status: ok ? 200 : 400)
+        return try .json(.object(["ok": .bool(ok), "result": result, "runs": .object(runs)]), status: ok ? 200 : 400)
     }
 
     private func storageFilesResponse() async throws -> HTTPBridgeResponse {
@@ -460,28 +474,48 @@ final class NativeBackend: @unchecked Sendable {
         return try .json((try? await storage.readJSON(relativePath: name)) ?? fallback)
     }
 
+    private func stockWatchResponse() async throws -> HTTPBridgeResponse {
+        try await jsonFileResponse("stock-watch.json", fallback: .object([
+            "ok": .bool(true),
+            "items": .array([]),
+            "pollSec": .number(900),
+        ]))
+    }
+
     private func authSlots() async -> JSONValue {
         let env = (try? await storage.environment(includingSecrets: true)) ?? [:]
         let secretState = await storage.secretConfigurationState()
-        let definitions: [(String, String, String, String?, String?)] = [
-            ("widget", "车辆状态", "GET", "NIO_VEHICLE_API_URL", "NIO_VEHICLE_ACCESS_TOKEN"),
-            ("status", "车况整包", "GET", "NIO_VEHICLE_STATUS_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
-            ("journey", "最近行程", "GET", "NIO_JOURNEY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
-            ("daily", "当日里程", "GET", "NIO_DAILY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
-            ("change", "换电订单", "POST", "NIO_CHANGE_API_URL", "NIO_CHANGE_ACCESS_TOKEN"),
-            ("checkin", "签到", "GET", "NIO_CHECKIN_API_URL", "NIO_CHECKIN_ACCESS_TOKEN"),
+        let recorded = (try? await storage.readJSON(relativePath: "auth-slots.json"))?.object ?? [:]
+        let definitions: [(id: String, label: String, method: String, address: String, needsURL: Bool, urlKey: String, tokenKey: String)] = [
+            ("widget", "车辆状态", "GET", "https://app.nio.com/app/api/icar/v2/widget/info", true,
+             "NIO_VEHICLE_API_URL", "NIO_VEHICLE_ACCESS_TOKEN"),
+            ("status", "车况整包", "GET", "https://icar.nio.com/api/2/rvs/vehicle/{vehicle_id}/status", true,
+             "NIO_VEHICLE_STATUS_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
+            ("journey", "最近行程", "GET", "https://icar.nio.com/api/1/vehicle/journey_merge/status", true,
+             "NIO_JOURNEY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
+            ("daily", "当日里程", "GET", "https://icar.nio.com/api/1/vehicle/journeys/daily_data", true,
+             "NIO_DAILY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
+            ("change", "换电订单", "POST",
+             "https://gateway-front-external.nio.com/moat/1100367/api/v1/otd/car/ext/general/serviceOrder/getTabOrder",
+             false, "NIO_CHANGE_API_URL", "NIO_CHANGE_ACCESS_TOKEN"),
+            ("checkin", "签到", "GET", "https://gateway-front-external.nio.com/moat/10086/c/award_cn/checkin", false,
+             "NIO_CHECKIN_API_URL", "NIO_CHECKIN_ACCESS_TOKEN"),
         ]
         return .object([
             "ok": .bool(true),
-            "slots": .array(definitions.map { id, label, method, urlKey, tokenKey in
-                let hasURL = urlKey.map { env[$0]?.isEmpty == false } ?? true
-                let hasToken = tokenKey.map { secretState[$0] == true } ?? true
+            "slots": .array(definitions.map { slot in
+                let status = recorded[slot.id]?.object ?? [:]
                 return .object([
-                    "id": .string(id),
-                    "label": .string(label),
-                    "method": .string(method),
-                    "configured": .bool(hasURL && hasToken),
-                    "ok": .null,
+                    "id": .string(slot.id),
+                    "label": .string(slot.label),
+                    "method": .string(slot.method),
+                    "address": .string(slot.address),
+                    "needsUrl": .bool(slot.needsURL),
+                    "configured": .bool(env[slot.urlKey]?.isEmpty == false && secretState[slot.tokenKey] == true),
+                    "ok": status["ok"] ?? .null,
+                    "kind": status["kind"] ?? .null,
+                    "error": status["error"] ?? .null,
+                    "at": status["at"] ?? .null,
                 ])
             }),
         ])

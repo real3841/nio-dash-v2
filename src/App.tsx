@@ -61,6 +61,8 @@ import {
   fmtTime,
   isUsableVehicleResponse,
   isValidGps,
+  isChargingStatus,
+  pollVehicleState,
   resolveVehicleHistory,
   snapshotFromResponse,
   type VehicleResponse,
@@ -134,6 +136,7 @@ export default function App() {
   const [vehiclePollReasonLabel, setVehiclePollReasonLabel] = useState("白天");
   const [vehiclePollConfigured, setVehiclePollConfigured] = useState<VehiclePollIntervals>({
     driving: 900,
+    charging: 600,
     day: 1800,
     night: 3600,
   });
@@ -292,7 +295,7 @@ export default function App() {
     setLastSyncVehicle(Date.now());
 
     const status = extractVehicleStatus(payload);
-    const vehicleState = status?.exterior_status.vehicle_state ?? null;
+    const vehicleState = pollVehicleState(status);
     const fotaStatus = status?.fota_status?.fota_status ?? null;
     vehicleStateRef.current = vehicleState;
     fotaStatusRef.current = fotaStatus;
@@ -559,7 +562,7 @@ export default function App() {
               pollEnvRef.current = normalizeVehiclePollEnv(vehicleEnv);
               setChangePollSec(changeSec);
               const status = data ? extractVehicleStatus(data) : null;
-              const state = status?.exterior_status.vehicle_state ?? null;
+              const state = pollVehicleState(status);
               const fotaStatus = status?.fota_status?.fota_status ?? fotaStatusRef.current;
               vehicleStateRef.current = state;
               fotaStatusRef.current = fotaStatus;
@@ -624,7 +627,7 @@ export default function App() {
             <p>
               <span className="adjust-dot" />
               <b>{s.soc_status.soc}%</b> · {s.soc_status.remaining_actual_range} km ·{" "}
-              {s.exterior_status.vehicle_state === 1 ? "行驶中" : s.soc_status.charge_state === 1 ? "充电中" : "已驻车"}
+              {s.exterior_status.vehicle_state === 1 ? "行驶中" : isChargingStatus(s) ? "充电中" : "已驻车"}
               {vehicleMeta?.at ? ` · 车况 ${fmtTime(vehicleMeta.at)}` : ""}
               {changeMeta?.at ? ` · 换电 ${fmtTime(changeMeta.at)}` : ""}
             </p>
@@ -737,11 +740,11 @@ export default function App() {
           onPollConfigLoaded={(vehicleEnv, changeSec) => {
             pollEnvRef.current = normalizeVehiclePollEnv(vehicleEnv);
             setChangePollSec(changeSec);
-            vehicleStateRef.current = s.exterior_status.vehicle_state;
+            vehicleStateRef.current = pollVehicleState(s);
             fotaStatusRef.current = s.fota_status?.fota_status ?? null;
             updateVehiclePollInterval(
               vehicleEnv,
-              s.exterior_status.vehicle_state,
+              pollVehicleState(s),
               setVehiclePollSec,
               setVehiclePollReasonLabel,
               setVehiclePollConfigured,

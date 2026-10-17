@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native" src="https://img.shields.io/badge/native-2.1.1-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.2-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -47,7 +47,7 @@
 - Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件，并从钥匙串删除。系统此时可能弹窗请求访问钥匙串，选「始终允许」即可；选「拒绝」的项会被跳过（之后在「更新 Token」中重新填写），以后不会再弹窗。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.1`。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.2`。
 
 ### 车辆看板卡片
 
@@ -63,14 +63,14 @@
 
 | 数据 | 策略 |
 |------|------|
-| **车辆** | 行驶中不论时段用「行驶中」间隔；驻车/充电等按白天 09:00–17:00 / 夜间 17:01–08:59，均可配置 |
+| **车辆** | 行驶中不论时段用「行驶中」间隔（默认 15 分钟）；检测到充电时改为每 10 分钟，充完自动恢复；其余按白天 09:00–17:00 / 夜间 17:01–08:59，均可配置 |
 | **换电** | 独立定时，默认 1 天，可选 12 小时或 6 小时；也可手动刷新。查询会按游标翻到最后一页 |
 | **签到** | 每天 **9:00** 一次；9 点后首次打开补拉；未签到时每 5 分钟重试直至已签 |
 
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.1.app`）。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.2.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.1`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.2`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -201,6 +201,7 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `NIO_VEHICLE_API_URL` | 完整 GET URL |
 | `NIO_VEHICLE_ACCESS_TOKEN` | Authorization Token |
 | `NIO_VEHICLE_POLL_DRIVING_SEC` | 行驶中间隔（秒，默认 900） |
+| `NIO_VEHICLE_POLL_CHARGING_SEC` | 充电中间隔（秒，默认 600）；充完自动恢复白天/夜间间隔 |
 | `NIO_VEHICLE_POLL_DAY_SEC` | 白天间隔（秒，默认 1800） |
 | `NIO_VEHICLE_POLL_NIGHT_SEC` | 夜间间隔（秒，默认 3600） |
 
@@ -237,7 +238,7 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | 隐藏卡片 | 卡片右上角眼睛图标 |
 | 查看 RVS JSON | 车辆卡片右上角 `{ }` |
 | 查看站点证书 | 家充桩卡片「站点证书」 |
-| 更新 Token | 数据同步 →「更新 Token」，粘贴 Bearer 或 HAR。车况和换电订单会重拉；HAR 里的家充月统计会写入本地 |
+| 更新 Token | 数据同步 →「更新 Token」，点中标为失效的接口，粘贴完整地址或 Bearer，也可选 HAR。更新后立即重拉相关接口；HAR 里的家充月统计会写入本地 |
 | 批量管理 | 数据同步 → 卡片管理（默认折叠） |
 | 恢复默认 | 卡片管理内「恢复默认」 |
 
@@ -254,6 +255,7 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `last-fetch.json` | 车辆拉取元信息 |
 | `last-fetch-change.json` | 换电拉取元信息 |
 | `last-fetch-checkin.json` | 签到拉取元信息（含 `run_day`） |
+| `auth-slots.json` | 「更新 Token」里每条接口最近一次的成败、失效类型与时间（不含地址和凭据） |
 | `fetch-log.json` | 运行日志（最多 500 条，重启后保留） |
 | `card-layout.json` | 卡片排序与隐藏状态 |
 | `power.json` | 家充桩快照与按月的每日电量。来自 HAR 导入，程序不能自行重签家充请求 |
@@ -299,6 +301,17 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `npm run serve:api` | 仅 API 服务 |
 
 ## 更新日志
+
+### v2.1.2
+
+- **充电时加密拉取**：检测到正在充电时，车况改为每 10 分钟拉取一次；充电结束后自动恢复白天 / 夜间间隔。间隔可在「数据同步 → 车辆 API 配置」中修改
+- **修复状态显示为 false**：原生版保存车况时会把 0 / 1 误存为 false / true，导致充电详情显示「状态 false」「false A」、充电类型显示错误，行驶中也无法切换到行驶间隔。现在按接口原值保存
+- **车况双接口互为备份**：「车辆状态」（widget）和「车况整包」（rvs status）都会拉取并合并，车况整包补上轮胎、车门、车窗等信息。其中一条签名失效时，看板继续用另一条的数据
+- **「更新 Token」标出失效接口**：每条接口单独记录最近一次结果，失效的那条标为「签名失效」或「登录失效」，并显示失败时间、原因和要抓的地址。更新后立即重拉相关接口，并逐条显示是否刷新成功
+- **顶部 API 状态与实际一致**：以前拉取失败不会记录，「车辆 / 换电 / 签到 API」会一直显示上次成功的绿勾；现在失败也会如实显示
+- **换电订单恢复同步**：换电接口不需要签名，原生版此前误报「不生成旧 MD5 签名」。现在带上 App 请求头，每次从第一页按游标翻页
+- **可以粘贴了**：原生窗口里的输入框此前无法使用 ⌘V / ⌘C / ⌘X / ⌘A / ⌘Z，现在恢复
+- **修复界面崩溃**：点「立即检查」库存后，界面可能报「undefined is not an object (evaluating 'i.items.find')」并整页出错
 
 ### v2.1.1
 

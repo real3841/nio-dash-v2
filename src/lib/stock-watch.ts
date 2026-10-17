@@ -22,11 +22,19 @@ export interface StockWatchState {
   tokenConfigured?: boolean;
 }
 
+/** 接口返回缺少 items 时视为无效，避免整页渲染崩溃。 */
+export function asStockWatchState(value: unknown): StockWatchState | null {
+  if (!value || typeof value !== "object") return null;
+  const state = value as Partial<StockWatchState>;
+  if (!Array.isArray(state.items)) return null;
+  return { ...state, items: state.items, pollSec: typeof state.pollSec === "number" ? state.pollSec : 900 };
+}
+
 export async function fetchStockWatch(): Promise<StockWatchState | null> {
   try {
     const res = await fetch("/api/stock-watch");
     if (!res.ok) return null;
-    return (await res.json()) as StockWatchState;
+    return asStockWatchState(await res.json());
   } catch {
     return null;
   }
@@ -59,8 +67,8 @@ export async function saveStockWatchAuth(input: {
       body: JSON.stringify(input),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { state?: StockWatchState };
-    return data.state ?? null;
+    const data = (await res.json()) as { state?: unknown };
+    return asStockWatchState(data.state);
   } catch {
     return null;
   }
@@ -74,8 +82,8 @@ export async function saveStockWatchPollSec(pollSec: number): Promise<StockWatch
       body: JSON.stringify({ pollSec }),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { state?: StockWatchState };
-    return data.state ?? null;
+    const data = (await res.json()) as { state?: unknown };
+    return asStockWatchState(data.state);
   } catch {
     return null;
   }
@@ -86,7 +94,7 @@ export async function triggerStockWatchCheck(targetId?: string): Promise<StockWa
     const query = targetId ? `?id=${encodeURIComponent(targetId)}` : "";
     const res = await fetch(`/api/stock-watch/check${query}`, { method: "POST" });
     if (!res.ok) return null;
-    return (await res.json()) as StockWatchState;
+    return asStockWatchState(await res.json());
   } catch {
     return null;
   }

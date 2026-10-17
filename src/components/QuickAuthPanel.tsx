@@ -9,6 +9,8 @@ interface AuthSlotView {
   needsUrl: boolean;
   ok: boolean | null;
   kind: "sign" | "auth" | "generic" | null;
+  error?: string | null;
+  at?: number | null;
 }
 
 interface QuickAuthResponse {
@@ -27,7 +29,50 @@ interface Props {
   onDone?: () => void | Promise<void>;
 }
 
-const RUN_LABELS: Record<string, string> = { vehicle: "车况", change: "换电订单" };
+const RUN_LABELS: Record<string, string> = { vehicle: "车况", change: "换电订单", checkin: "签到" };
+
+const UPDATED_LABELS: Record<string, string> = {
+  NIO_VEHICLE_API_URL: "车辆状态",
+  NIO_VEHICLE_STATUS_URL: "车况整包",
+  NIO_JOURNEY_API_URL: "最近行程",
+  NIO_DAILY_API_URL: "当日里程",
+  NIO_CHANGE_API_URL: "换电订单",
+  NIO_CHECKIN_API_URL: "签到",
+};
+
+function updatedLine(updated: string[]): string | null {
+  const names = updated.flatMap((key) => (UPDATED_LABELS[key] ? [UPDATED_LABELS[key]] : []));
+  return names.length > 0 ? `已换地址：${names.join("、")}` : null;
+}
+
+function runLines(runs: QuickAuthResponse["runs"]): string[] {
+  return Object.entries(runs ?? {}).map(
+    ([name, status]) => `${RUN_LABELS[name] ?? name}：${status === "ok" ? "已刷新" : `刷新失败 · ${status}`}`,
+  );
+}
+
+function withDefaults(slot: Partial<AuthSlotView> & { id: string }): AuthSlotView {
+  const def = AUTH_SLOTS.find((entry) => entry.id === slot.id);
+  return {
+    label: def?.label ?? slot.id,
+    method: def?.method ?? "GET",
+    needsUrl: def?.needsUrl ?? false,
+    ok: null,
+    kind: null,
+    ...slot,
+    address: slot.address || def?.address || "",
+  };
+}
+
+function formatCheckedAt(at: number | null | undefined): string | null {
+  if (!at) return null;
+  return new Date(at).toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const EMPTY_SLOTS: AuthSlotView[] = AUTH_SLOTS.map((slot) => ({
   ...slot,
@@ -61,8 +106,8 @@ export function QuickAuthPanel({ onDone }: Props) {
 
   const loadSlots = async () => {
     const res = await fetch("/api/auth-slots");
-    const body = (await res.json()) as { ok?: boolean; slots?: AuthSlotView[] };
-    const next = body.slots ?? [];
+    const body = (await res.json()) as { ok?: boolean; slots?: Array<Partial<AuthSlotView> & { id: string }> };
+    const next = (body.slots ?? []).map(withDefaults);
     setSlots(next);
     if (!picked.current && next.length > 0) setSelectedId(pickSlot(next));
   };
@@ -93,11 +138,9 @@ export function QuickAuthPanel({ onDone }: Props) {
       const r = body.result;
       const next: string[] = [];
       next.push(r.tokenUpdated ? "Token 已写入车况、换电和补充接口" : "Token 未变");
-      if (r.updated.length > 0) next.push(`地址已更新：${r.updated.join("、")}`);
-      for (const [name, status] of Object.entries(body.runs ?? {})) {
-        next.push(`${RUN_LABELS[name] ?? name}：${status === "ok" ? "已刷新" : `刷新失败 · ${status}`}`);
-      }
-      next.push(...r.warnings);
+      const changed = updatedLine(r.updated);
+      if (changed) next.push(changed);
+      next.push(...runLines(body.runs), ...r.warnings);
       setLines(next);
       setUrl("");
       setToken("");
@@ -128,8 +171,9 @@ export function QuickAuthPanel({ onDone }: Props) {
       const r = body.result;
       const next = [
         r.tokenUpdated ? "Token 已写入车况、换电和补充接口" : "Token 未变",
-        r.updated.length > 0 ? `地址已更新：${r.updated.join("、")}` : "",
+        updatedLine(r.updated) ?? "",
         r.power ? `加电：${r.power}` : "",
+        ...runLines(body.runs),
         ...r.warnings,
       ].filter(Boolean);
       setLines(next);
@@ -181,6 +225,11 @@ export function QuickAuthPanel({ onDone }: Props) {
         >
           <p className="auth-slot-prompt">
             {failed ? `${selected.label} · ${failed}` : selected.label}
+          </p>
+          <p className={`auth-slot-status${failed ? " failed" : ""}`}>
+            {selected.ok == null
+              ? "还没有拉取记录"
+              : `${formatCheckedAt(selected.at) ?? "最近"} ${selected.ok ? "拉取成功" : `失败：${selected.error ?? failed}`}`}
           </p>
           <p className="auth-slot-address">
             <span>{selected.method}</span>

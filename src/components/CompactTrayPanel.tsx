@@ -15,7 +15,7 @@ import {
   type TrayLayout,
   type TraySection,
 } from "../lib/tray-layout";
-import { extractVehicleStatus, statusFlagOn } from "../lib/vehicle";
+import { extractVehicleStatus, pollVehicleState, statusFlagOn } from "../lib/vehicle";
 import { sortedMonthKeys, workStateLabel, type PowerFile } from "../lib/power";
 import { analyzeServiceOrders } from "../lib/change";
 import { fetchEnvConfig } from "../lib/env-config";
@@ -198,7 +198,7 @@ export function CompactTrayPanel() {
         : EMPTY.powerState,
       monthPower: month ? `${month.total_real_charge_kwh.toFixed(1)} kWh` : null,
       monthSummary: monthPowerSummary(validPower),
-      vehicleSchedule: vehicleScheduleLabel(config?.vehicle, status?.exterior_status.vehicle_state ?? null, new Date().getHours()),
+      vehicleSchedule: vehicleScheduleLabel(config?.vehicle, pollVehicleState(status), new Date().getHours()),
       changeSchedule: changeScheduleLabel(config?.change),
       vehicleFetch: meta,
       changeFetch: changeMeta,

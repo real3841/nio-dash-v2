@@ -109,6 +109,28 @@ private final class FakeLegacySecretStore: LegacySecretStore, @unchecked Sendabl
     #expect(keychain.reads.count == readsAfterFirstLaunch)
 }
 
+@Test func jsonValueKeepsIntegerFlagsAsNumbers() throws {
+    let object = try JSONSerialization.jsonObject(with: Data(#"{"zero":0,"one":1,"yes":true,"no":false}"#.utf8))
+    let value = JSONValue(object).object ?? [:]
+
+    #expect(value["zero"] == .number(0))
+    #expect(value["one"] == .number(1))
+    #expect(value["yes"] == .bool(true))
+    #expect(value["no"] == .bool(false))
+}
+
+@Test func schedulerDetectsChargingFromNumericAndLegacyBooleanState() {
+    let charging: JSONValue = .object(["data": .object(["status": .object(["soc_status": .object(["charge_state": .number(1)])])])])
+    let legacy: JSONValue = .object(["soc_status": .object(["charge_state": .bool(true)])])
+    let idle: JSONValue = .object(["soc_status": .object(["charge_state": .number(0)])])
+    let done: JSONValue = .object(["soc_status": .object(["charge_state": .number(2)])])
+
+    #expect(NativeScheduler.isCharging(charging))
+    #expect(NativeScheduler.isCharging(legacy))
+    #expect(!NativeScheduler.isCharging(idle))
+    #expect(!NativeScheduler.isCharging(done))
+}
+
 @Test func photoServiceRejectsOversizedInput() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -195,6 +217,52 @@ private final class FakeLegacySecretStore: LegacySecretStore, @unchecked Sendabl
     #expect(await storage.fileExists(relativePath: "change.json"))
     #expect(await storage.fileExists(relativePath: "change-ledger.json"))
     #expect(await storage.fileExists(relativePath: "checkin.json"))
+    let slots = try await storage.readJSON(relativePath: "auth-slots.json").object ?? [:]
+    for id in ["widget", "change", "checkin"] {
+        #expect(slots[id]?.object?["ok"] == .bool(true))
+    }
+}
+
+@Test func widgetURLUsesCapturedSignWhenSavedURLIsNotUsable() throws {
+    var env = [
+        "NIO_VEHICLE_API_MODE": "widget",
+        "NIO_VEHICLE_API_URL": "\"Host: icar.nio.com",
+        "NIO_VEHICLE_API_SIGN": "captured-sign",
+        "NIO_VEHICLE_API_TIMESTAMP": "1700000000",
+        "NIO_VEHICLE_ID": "vehicle-test",
+        "NIO_VEHICLE_DEVICE_ID": "device-test",
+    ]
+    let url = try #require(try SyncCoordinator.vehicleWidgetURL(env))
+    let items = URLComponents(string: url)?.queryItems ?? []
+    #expect(url.hasPrefix("https://app.nio.com/app/api/icar/v2/widget/info?"))
+    #expect(items.first { $0.name == "sign" }?.value == "captured-sign")
+    #expect(items.first { $0.name == "vehicle_id" }?.value == "vehicle-test")
+
+    env["NIO_VEHICLE_API_SIGN"] = nil
+    #expect(throws: NativeError.self) { try SyncCoordinator.vehicleWidgetURL(env) }
+    #expect(try SyncCoordinator.vehicleWidgetURL([:]) == nil)
+}
+
+@Test func vehicleStatusMergesTyreDataIntoWidgetPayload() {
+    let widget: JSONValue = .object(["data": .object(["status": .object(["soc_status": .object(["soc": .number(80)])])])])
+    let status: JSONValue = .object(["data": .object(["status": .object(["tyre_status": .object(["fl": .number(2.5)])])])])
+    let merged = SyncCoordinator.mergedVehiclePayload(widget: widget, status: status)?.object?["data"]?.object?["status"]?.object
+    #expect(merged?["soc_status"] != nil)
+    #expect(merged?["tyre_status"] != nil)
+    #expect(SyncCoordinator.mergedVehiclePayload(widget: nil, status: status) == status)
+    #expect(SyncCoordinator.mergedVehiclePayload(widget: nil, status: nil) == nil)
+}
+
+@Test func apiFailuresAreClassifiedForTheAuthPanel() {
+    let signFailed: JSONValue = .object(["result_code": .string("sign_failed")])
+    #expect(SyncCoordinator.apiFailure(signFailed, status: 400, signed: true).kind == .sign)
+    #expect(SyncCoordinator.apiFailure(nil, status: 403, signed: true).kind == .sign)
+    #expect(SyncCoordinator.apiFailure(nil, status: 403, signed: false).kind == .auth)
+    #expect(SyncCoordinator.apiFailure(nil, status: 500, signed: true).kind == .generic)
+    #expect(SyncCoordinator.businessFailure(signFailed)?.kind == .sign)
+    #expect(SyncCoordinator.businessFailure(.object(["resultCode": .string("auth_error")]))?.kind == .auth)
+    #expect(SyncCoordinator.businessFailure(.object(["result_code": .string("success")])) == nil)
+    #expect(SyncCoordinator.failureKind(NativeError.unsupported("x")) == "sign")
 }
 
 @Test func powerHARImportKeepsOnlyDashboardFields() throws {

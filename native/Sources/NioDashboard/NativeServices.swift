@@ -102,6 +102,19 @@ actor RedactedLog {
     }
 }
 
+struct NioAPIError: LocalizedError, Sendable {
+    enum Kind: String, Sendable {
+        case sign
+        case auth
+        case generic
+    }
+
+    let kind: Kind
+    let message: String
+
+    var errorDescription: String? { message }
+}
+
 actor SyncCoordinator {
     enum Target: String, Sendable {
         case vehicle
@@ -176,30 +189,79 @@ actor SyncCoordinator {
             onUpdated?(target.rawValue)
         } catch {
             await log.append(category: target.rawValue, level: "error", message: error.localizedDescription)
+            if let meta = Self.metaFile(for: target) {
+                try? await writeMeta(meta, ok: false, error: error.localizedDescription, errorKind: Self.failureKind(error))
+                onUpdated?(target.rawValue)
+            }
             throw error
+        }
+    }
+
+    private static func metaFile(for target: Target) -> String? {
+        switch target {
+        case .vehicle: "last-fetch.json"
+        case .change: "last-fetch-change.json"
+        case .checkin: "last-fetch-checkin.json"
+        case .power: "last-fetch-power.json"
+        case .stock: "last-fetch-stock.json"
+        case .all: nil
         }
     }
 
     private func refreshVehicle() async throws {
         let env = try await storage.environment(includingSecrets: true, keychain: keychain)
-        guard let rawURL = first(env, ["NIO_VEHICLE_API_URL", "NIO_API_URL"]), !rawURL.isEmpty else {
+        let headers = ["User-Agent": first(env, ["NIO_VEHICLE_USER_AGENT", "NIO_USER_AGENT"])
+            ?? "VehicleWidgetExtension/6.5.3 (com.nio.app; build:6050300; iOS 18.0.0)"]
+        let extraToken = first(env, ["NIO_VEHICLE_EXTRA_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"])
+
+        var widgetPayload: JSONValue?
+        var widgetError: (any Error)?
+        do {
+            if let url = try Self.vehicleWidgetURL(env) {
+                let payload = try await requestJSON(
+                    url,
+                    method: first(env, ["NIO_VEHICLE_API_METHOD", "NIO_API_METHOD"]) ?? "GET",
+                    token: first(env, ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_ACCESS_TOKEN"]),
+                    body: nil,
+                    extraHeaders: headers
+                )
+                try Self.requireSuccess(payload, accepted: ["success"])
+                widgetPayload = payload
+                await recordSlot("widget", nil)
+            }
+        } catch {
+            widgetError = error
+            await recordSlot("widget", error)
+        }
+
+        var statusPayload: JSONValue?
+        if let url = env["NIO_VEHICLE_STATUS_URL"], !url.isEmpty {
+            do {
+                let payload = try await requestJSON(url, method: "GET", token: extraToken, body: nil, extraHeaders: headers)
+                try Self.requireSuccess(payload, accepted: ["success"])
+                statusPayload = payload
+                await recordSlot("status", nil)
+            } catch {
+                await recordSlot("status", error)
+                await log.append(category: "vehicle", level: "warning", message: "车况整包同步失败：\(error.localizedDescription)")
+            }
+        }
+
+        guard let payload = Self.mergedVehiclePayload(widget: widgetPayload, status: statusPayload) else {
+            if let widgetError { throw widgetError }
             if await storage.fileExists(relativePath: "vehicle.json") { return }
             throw NativeError.invalidInput("请配置车辆完整请求 URL")
         }
-        if (env["NIO_VEHICLE_API_MODE"] == "widget" || env["NIO_API_MODE"] == "widget"),
-           !rawURL.contains("sign=") {
-            throw NativeError.unsupported("2.0 不再生成旧 Widget MD5 签名，请粘贴抓包得到的完整 URL")
+        if let widgetError {
+            await log.append(category: "vehicle", level: "warning", message: "车辆状态失败，已改用车况整包：\(widgetError.localizedDescription)")
         }
-        let method = first(env, ["NIO_VEHICLE_API_METHOD", "NIO_API_METHOD"]) ?? "GET"
-        let token = first(env, ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_ACCESS_TOKEN"])
-        let payload = try await requestJSON(rawURL, method: method, token: token, body: nil)
         try await storage.writeJSON(payload, relativePath: "vehicle.json")
         try await appendVehicleHistory(payload)
         try await writeMeta("last-fetch.json", ok: true)
 
-        for (urlKey, output) in [
-            ("NIO_JOURNEY_API_URL", "journey.json"),
-            ("NIO_DAILY_API_URL", "daily.json"),
+        for (slot, urlKey, output) in [
+            ("journey", "NIO_JOURNEY_API_URL", "journey.json"),
+            ("daily", "NIO_DAILY_API_URL", "daily.json"),
         ] {
             guard let url = env[urlKey], !url.isEmpty else { continue }
             do {
@@ -209,13 +271,73 @@ actor SyncCoordinator {
                     token: first(env, ["NIO_VEHICLE_EXTRA_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"]),
                     body: nil
                 )
+                await recordSlot(slot, nil)
                 let envelope = extraFileEnvelope(output: output, payload: extra)
                 try await storage.writeJSON(envelope, relativePath: output)
                 try await persistExtraHistory(output: output, envelope: envelope)
             } catch {
+                await recordSlot(slot, error)
                 await log.append(category: "vehicle", level: "warning", message: "\(output) 补充同步失败：\(error.localizedDescription)")
             }
         }
+    }
+
+    /// nil 表示没配车辆状态接口；抛错表示配了但拼不出可用的请求
+    static func vehicleWidgetURL(_ env: [String: String]) throws -> String? {
+        func value(_ name: String) -> String? {
+            [env["NIO_VEHICLE_\(name)"], env["NIO_\(name)"]].compactMap { $0 }.first { !$0.isEmpty }
+        }
+        let widgetMode = value("API_MODE") == "widget"
+        let raw = value("API_URL") ?? ""
+        if raw.hasPrefix("https://"), !widgetMode || raw.contains("sign=") { return raw }
+
+        if widgetMode, let sign = value("API_SIGN"), let timestamp = value("API_TIMESTAMP"),
+           let vehicleID = value("ID"), let deviceID = value("DEVICE_ID") {
+            var components = URLComponents(string: "https://app.nio.com/app/api/icar/v2/widget/info")!
+            components.queryItems = [
+                ("region", value("REGION") ?? "cn"),
+                ("app_id", value("APP_ID") ?? "10002"),
+                ("timestamp", timestamp),
+                ("lang", value("LANG") ?? "zh-CN"),
+                ("vehicle_id", vehicleID),
+                ("app_ver", value("APP_VER") ?? "6.5.3"),
+                ("device_id", deviceID),
+                ("widget_functions", value("WIDGET_FUNCTIONS")
+                    ?? "rvs_run_frequent_appointment,rvs_set_defender_mode,rvs_rpa_out,rvs_exe_findme"),
+                ("widget_size", value("WIDGET_SIZE") ?? "medium"),
+                ("sign", sign),
+            ].map { URLQueryItem(name: $0.0, value: $0.1) }
+            return components.url?.absoluteString
+        }
+        if widgetMode {
+            throw NativeError.unsupported("2.0 不再生成旧 Widget MD5 签名，请粘贴抓包得到的完整 URL")
+        }
+        if raw.isEmpty { return nil }
+        throw NativeError.invalidInput("车辆状态地址无效，请粘贴抓包得到的完整 URL")
+    }
+
+    static func mergedVehiclePayload(widget: JSONValue?, status: JSONValue?) -> JSONValue? {
+        guard let widget else { return status }
+        guard let extra = status?.object?["data"]?.object?["status"]?.object,
+              var root = widget.object else { return widget }
+        var data = root["data"]?.object ?? [:]
+        var merged = data["status"]?.object ?? [:]
+        for (key, value) in extra where value.object != nil {
+            merged[key] = value
+        }
+        data["status"] = .object(merged)
+        root["data"] = .object(data)
+        return .object(root)
+    }
+
+    static func requireSuccess(_ payload: JSONValue, accepted: Set<String>) throws {
+        let code = resultCode(payload)
+        guard !code.isEmpty, !accepted.contains(code) else { return }
+        let object = payload.object ?? [:]
+        let message = ["display_msg", "message", "resultMsg", "result_desc", "debug_msg"]
+            .compactMap { object[$0]?.string }
+            .first { !$0.isEmpty }
+        throw NioAPIError(kind: .generic, message: "接口返回 \(code)\(message.map { "：\($0)" } ?? "")")
     }
 
     private func extraFileEnvelope(output: String, payload: JSONValue) -> JSONValue {
@@ -342,15 +464,22 @@ actor SyncCoordinator {
             if await storage.fileExists(relativePath: "change.json") { return }
             throw NativeError.invalidInput("请配置换电订单完整请求 URL")
         }
-        if env["NIO_CHANGE_HASH_TYPE"]?.isEmpty == false && !baseURL.contains("sign=") {
-            throw NativeError.unsupported("2.0 不生成旧 MD5 签名，请改用抓包完整 URL")
+        do {
+            try await fetchChange(env: env, baseURL: baseURL)
+            await recordSlot("change", nil)
+        } catch {
+            await recordSlot("change", error)
+            throw error
         }
+    }
+
+    private func fetchChange(env: [String: String], baseURL: String) async throws {
         let method = (env["NIO_CHANGE_API_METHOD"] ?? "POST").uppercased()
         let body = method == "GET" ? nil : Data((env["NIO_CHANGE_API_BODY"] ?? "{}").utf8)
         let token = first(env, ["NIO_CHANGE_ACCESS_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"])
-        let headers = env["NIO_CHANGE_COOKIE"].map { ["Cookie": $0] } ?? [:]
+        let headers = Self.changeHeaders(env)
         let cursorMode = env["NIO_CHANGE_API_MODE"] == "cursor"
-        var nextURL = baseURL
+        var nextURL = cursorMode ? try cursorPageURL(baseURL, offset: 0, time: nil, id: nil) : baseURL
         var offset = 0
         var ledger = await loadOrderLedger()
         var latestPayload: JSONValue = .object([:])
@@ -364,6 +493,7 @@ actor SyncCoordinator {
                 body: body,
                 extraHeaders: headers
             )
+            try Self.requireSuccess(latestPayload, accepted: ["0000", "success"])
             let pageOrders = extractOrders(latestPayload)
             ledger = mergedOrderLedger(ledger, pageOrders)
             let cursor = extractCursor(latestPayload)
@@ -456,13 +586,16 @@ actor SyncCoordinator {
 
     private func extractCursor(_ value: JSONValue) -> (hasMore: Bool, time: String?, id: String?) {
         guard case let .object(object) = value else { return (false, nil, nil) }
+        func text(_ keys: [String]) -> String? {
+            for key in keys {
+                if let value = object[key]?.string, !value.isEmpty { return value }
+                if let value = object[key]?.number { return String(format: "%.0f", value) }
+            }
+            return nil
+        }
         let hasMore = object["hasMore"]?.bool ?? object["has_more"]?.bool
-        let time = object["lastCursorCreateTime"]?.string
-            ?? object["cursorTime"]?.string
-            ?? object["last_cursor_create_time"]?.string
-        let id = object["lastCursorId"]?.string
-            ?? object["cursorId"]?.string
-            ?? object["last_cursor_id"]?.string
+        let time = text(["lastCursorCreateTime", "cursorTime", "last_cursor_create_time"])
+        let id = text(["lastCursorId", "cursorId", "last_cursor_id"])
         if hasMore != nil || time != nil || id != nil {
             return (hasMore ?? false, time, id)
         }
@@ -473,20 +606,37 @@ actor SyncCoordinator {
         return (false, nil, nil)
     }
 
-    private func cursorPageURL(_ raw: String, offset: Int, time: String, id: String) throws -> String {
+    private static func changeHeaders(_ env: [String: String]) -> [String: String] {
+        var headers = [
+            "User-Agent": "NextevCar/6.3.0 (com.do1.WeiLaiApp; build:2586; iOS 26.2.1)",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+        ]
+        let mapping = [
+            "NIO_CHANGE_USER_AGENT": "User-Agent",
+            "NIO_CHANGE_ACCEPT": "Accept",
+            "NIO_CHANGE_ACCEPT_LANGUAGE": "Accept-Language",
+            "NIO_CHANGE_ORIGIN": "Origin",
+            "NIO_CHANGE_MOBILEINFO": "mobileinfo",
+            "NIO_CHANGE_COOKIE": "Cookie",
+        ]
+        for (key, header) in mapping {
+            if let value = env[key], !value.isEmpty { headers[header] = value }
+        }
+        return headers
+    }
+
+    private func cursorPageURL(_ raw: String, offset: Int, time: String?, id: String?) throws -> String {
         guard var components = URLComponents(string: raw) else {
             throw NativeError.invalidInput("换电请求 URL 无效")
         }
-        var items = components.queryItems ?? []
-        let updates = [
-            "offset": String(offset),
-            "limit": "50",
-            "lastCursorCreateTime": time,
-            "lastCursorId": id,
-        ]
-        for (name, value) in updates {
-            items.removeAll { $0.name == name }
-            items.append(URLQueryItem(name: name, value: value))
+        let pagingKeys: Set = ["offset", "limit", "lastCursorCreateTime", "lastCursorId"]
+        var items = (components.queryItems ?? []).filter { !pagingKeys.contains($0.name) }
+        items.append(URLQueryItem(name: "offset", value: String(offset)))
+        items.append(URLQueryItem(name: "limit", value: "10"))
+        if let time, let id {
+            items.append(URLQueryItem(name: "lastCursorCreateTime", value: time))
+            items.append(URLQueryItem(name: "lastCursorId", value: id))
         }
         components.queryItems = items
         guard let result = components.url?.absoluteString else {
@@ -520,12 +670,19 @@ actor SyncCoordinator {
             if await storage.fileExists(relativePath: "checkin.json") { return }
             throw NativeError.invalidInput("请配置签到请求 URL")
         }
-        let payload = try await requestJSON(
-            url,
-            method: "GET",
-            token: first(env, ["NIO_CHECKIN_ACCESS_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"]),
-            body: nil
-        )
+        let payload: JSONValue
+        do {
+            payload = try await requestJSON(
+                url,
+                method: "GET",
+                token: first(env, ["NIO_CHECKIN_ACCESS_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"]),
+                body: nil
+            )
+            await recordSlot("checkin", nil)
+        } catch {
+            await recordSlot("checkin", error)
+            throw error
+        }
         try await storage.writeJSON(payload, relativePath: "checkin.json")
         try await writeMeta("last-fetch-checkin.json", ok: true)
     }
@@ -591,21 +748,69 @@ actor SyncCoordinator {
         guard let response = response as? HTTPURLResponse else {
             throw NativeError.network("服务未返回 HTTP 响应")
         }
+        let payload = (try? JSONSerialization.jsonObject(with: data)).map(JSONValue.init)
+        let signed = url.query?.contains("sign=") == true
         guard (200..<300).contains(response.statusCode) else {
-            throw NativeError.network("服务请求失败（HTTP \(response.statusCode)）")
+            throw Self.apiFailure(payload, status: response.statusCode, signed: signed)
         }
         guard !data.isEmpty else { throw NativeError.network("服务返回空内容") }
-        let object = try JSONSerialization.jsonObject(with: data)
-        return JSONValue(object)
+        guard let payload else { throw NativeError.network("服务返回的不是 JSON") }
+        if let failure = Self.businessFailure(payload) { throw failure }
+        return payload
     }
 
-    private func writeMeta(_ name: String, ok: Bool, error: String? = nil) async throws {
+    static func apiFailure(_ payload: JSONValue?, status: Int, signed: Bool) -> NioAPIError {
+        let code = resultCode(payload)
+        let blob = code.lowercased()
+        if blob.contains("sign") || (status == 403 && signed && code.isEmpty) {
+            return NioAPIError(kind: .sign, message: "签名失效（HTTP \(status)\(code.isEmpty ? "" : " · \(code)")）")
+        }
+        if status == 401 || status == 403 || ["auth", "token", "login", "unauthor"].contains(where: blob.contains) {
+            return NioAPIError(kind: .auth, message: "Token 失效（HTTP \(status)\(code.isEmpty ? "" : " · \(code)")）")
+        }
+        return NioAPIError(kind: .generic, message: "服务请求失败（HTTP \(status)\(code.isEmpty ? "" : " · \(code)")）")
+    }
+
+    static func businessFailure(_ payload: JSONValue) -> NioAPIError? {
+        let code = resultCode(payload)
+        let blob = code.lowercased()
+        if blob.contains("sign") { return NioAPIError(kind: .sign, message: "签名失效（\(code)）") }
+        if ["auth", "token", "login", "unauthor"].contains(where: blob.contains) {
+            return NioAPIError(kind: .auth, message: "Token 失效（\(code)）")
+        }
+        return nil
+    }
+
+    private static func resultCode(_ payload: JSONValue?) -> String {
+        guard let object = payload?.object else { return "" }
+        let value = object["result_code"] ?? object["resultCode"]
+        return value?.string ?? value?.number.map { String(format: "%.0f", $0) } ?? ""
+    }
+
+    static func failureKind(_ error: any Error) -> String {
+        if let error = error as? NioAPIError { return error.kind.rawValue }
+        if case .unsupported = error as? NativeError { return NioAPIError.Kind.sign.rawValue }
+        return NioAPIError.Kind.generic.rawValue
+    }
+
+    private func recordSlot(_ id: String, _ error: (any Error)?) async {
+        var slots = (try? await storage.readJSON(relativePath: "auth-slots.json"))?.object ?? [:]
+        slots[id] = .object([
+            "ok": .bool(error == nil),
+            "kind": error.map { .string(Self.failureKind($0)) } ?? .null,
+            "error": error.map { .string($0.localizedDescription) } ?? .null,
+            "at": .number(Date().timeIntervalSince1970 * 1000),
+        ])
+        try? await storage.writeJSON(.object(slots), relativePath: "auth-slots.json")
+    }
+
+    private func writeMeta(_ name: String, ok: Bool, error: String? = nil, errorKind: String? = nil) async throws {
         try await storage.writeJSON(
             .object([
                 "ok": .bool(ok),
                 "at": .number(Date().timeIntervalSince1970 * 1000),
                 "error": error.map(JSONValue.string) ?? .null,
-                "errorKind": .null,
+                "errorKind": errorKind.map(JSONValue.string) ?? .null,
             ]),
             relativePath: name
         )
@@ -800,6 +1005,9 @@ actor NativeScheduler {
             if vehicleState == 1 {
                 return max(60, TimeInterval(env["NIO_VEHICLE_POLL_DRIVING_SEC"] ?? "") ?? 900)
             }
+            if vehicleState == 3 || Self.isCharging(vehicle) {
+                return max(60, TimeInterval(env["NIO_VEHICLE_POLL_CHARGING_SEC"] ?? "") ?? 600)
+            }
         }
         let hour = Calendar.current.component(.hour, from: Date())
         let key = (9...17).contains(hour) ? "NIO_VEHICLE_POLL_DAY_SEC" : "NIO_VEHICLE_POLL_NIGHT_SEC"
@@ -835,6 +1043,16 @@ actor NativeScheduler {
             if let result = recursiveNumber(keys, in: nested) { return result }
         }
         return nil
+    }
+
+    /// 2.1.1 及更早版本会把 0/1 存成 false/true，因此两种写法都要识别。
+    static func isCharging(_ value: JSONValue) -> Bool {
+        guard case let .object(object) = value else { return false }
+        switch object["charge_state"] {
+        case let .number(state)?: return state == 1
+        case let .bool(state)?: return state
+        default: return object.values.contains { isCharging($0) }
+        }
     }
 
     private func recursiveBool(_ keys: Set<String>, in value: JSONValue) -> Bool? {

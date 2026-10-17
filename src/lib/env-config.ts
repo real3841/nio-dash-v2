@@ -4,6 +4,7 @@ export type VehicleEnv = {
   NIO_VEHICLE_USER_AGENT: string;
   NIO_VEHICLE_API_METHOD: string;
   NIO_VEHICLE_POLL_DRIVING_SEC: string;
+  NIO_VEHICLE_POLL_CHARGING_SEC: string;
   NIO_VEHICLE_POLL_DAY_SEC: string;
   NIO_VEHICLE_POLL_NIGHT_SEC: string;
   NIO_CHECKIN_API_URL: string;
@@ -93,6 +94,10 @@ export const VEHICLE_POLL_FIELDS: EnvFieldDef[] = [
   {
     key: "NIO_VEHICLE_POLL_DRIVING_SEC",
     label: "行驶中拉取间隔（秒，默认 900 = 15 分钟）",
+  },
+  {
+    key: "NIO_VEHICLE_POLL_CHARGING_SEC",
+    label: "充电中拉取间隔（秒，默认 600 = 10 分钟；充完自动恢复白天/夜间间隔）",
   },
   {
     key: "NIO_VEHICLE_POLL_DAY_SEC",

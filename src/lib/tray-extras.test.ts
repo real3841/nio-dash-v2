@@ -9,11 +9,12 @@ test("formats poll intervals in minutes or whole hours", () => {
   assert.equal(formatPollInterval(5400), "90 分");
 });
 
-test("vehicle schedule follows driving, day and night rules", () => {
+test("vehicle schedule follows driving, charging, day and night rules", () => {
   const env = { NIO_VEHICLE_POLL_DAY_SEC: "1800", NIO_VEHICLE_POLL_NIGHT_SEC: "3600", NIO_VEHICLE_POLL_DRIVING_SEC: "900" };
   assert.equal(vehicleScheduleLabel(env, 1, 12), "车况 行驶 15 分");
-  assert.equal(vehicleScheduleLabel(env, 3, 12), "车况 白天 30 分");
-  assert.equal(vehicleScheduleLabel(env, 3, 22), "车况 夜间 1 时");
+  assert.equal(vehicleScheduleLabel(env, 3, 22), "车况 充电 10 分");
+  assert.equal(vehicleScheduleLabel(env, 2, 12), "车况 白天 30 分");
+  assert.equal(vehicleScheduleLabel(env, 2, 22), "车况 夜间 1 时");
   assert.equal(vehicleScheduleLabel(undefined, null, 10), "车况 白天 30 分");
   assert.equal(changeScheduleLabel(undefined), "换电 每 24 时");
 });

@@ -3,6 +3,7 @@ import path from "node:path";
 
 export const VEHICLE_POLL_ENV_KEYS = [
   "NIO_VEHICLE_POLL_DRIVING_SEC",
+  "NIO_VEHICLE_POLL_CHARGING_SEC",
   "NIO_VEHICLE_POLL_DAY_SEC",
   "NIO_VEHICLE_POLL_NIGHT_SEC",
 ] as const;
@@ -10,6 +11,7 @@ export const VEHICLE_POLL_ENV_KEYS = [
 export const CHANGE_POLL_ENV_KEY = "NIO_CHANGE_POLL_INTERVAL" as const;
 
 const DEFAULT_DRIVING_SEC = 900;
+const DEFAULT_CHARGING_SEC = 600;
 const DEFAULT_DAY_SEC = 1800;
 const DEFAULT_NIGHT_SEC = 3600;
 const DEFAULT_CHANGE_SEC = 86400;
@@ -31,12 +33,13 @@ export function isDrivingVehicleState(vehicleState: number | null): boolean {
   return vehicleState === 1;
 }
 
-/** 行驶中不论几点都用行驶间隔；非行驶才按白天/夜间 */
+/** 行驶中、充电中（vehicle_state 3）不论几点都用各自间隔；其余按白天/夜间 */
 export function vehiclePollReason(
   vehicleState: number | null,
   now = new Date(),
-): "driving" | "day" | "night" {
+): "driving" | "charging" | "day" | "night" {
   if (isDrivingVehicleState(vehicleState)) return "driving";
+  if (vehicleState === 3) return "charging";
   return isDaytime(now) ? "day" : "night";
 }
 
@@ -66,9 +69,17 @@ export function readVehicleState(dataDir: string): number | null {
     const file = path.join(dataDir, "vehicle.json");
     if (!fs.existsSync(file)) return null;
     const json = JSON.parse(fs.readFileSync(file, "utf8")) as {
-      data?: { status?: { exterior_status?: { vehicle_state?: number } } };
+      data?: {
+        status?: {
+          exterior_status?: { vehicle_state?: number };
+          soc_status?: { charge_state?: number | boolean };
+        };
+      };
     };
     const state = json.data?.status?.exterior_status?.vehicle_state;
+    const chargeState = json.data?.status?.soc_status?.charge_state;
+    const charging = chargeState === 1 || chargeState === true;
+    if (state !== 1 && charging) return 3;
     return typeof state === "number" ? state : null;
   } catch {
     return null;
@@ -79,8 +90,9 @@ export function getVehiclePollInfo(
   env: Record<string, string>,
   dataDir: string,
   now = new Date(),
-): { intervalSec: number; reason: "driving" | "day" | "night" | "fota"; reasonLabel: string } {
+): { intervalSec: number; reason: "driving" | "charging" | "day" | "night" | "fota"; reasonLabel: string } {
   const driving = parsePollSec(env.NIO_VEHICLE_POLL_DRIVING_SEC, DEFAULT_DRIVING_SEC);
+  const charging = parsePollSec(env.NIO_VEHICLE_POLL_CHARGING_SEC, DEFAULT_CHARGING_SEC);
   const day = parsePollSec(env.NIO_VEHICLE_POLL_DAY_SEC, DEFAULT_DAY_SEC);
   const night = parsePollSec(env.NIO_VEHICLE_POLL_NIGHT_SEC, DEFAULT_NIGHT_SEC);
   if (isFotaUpdating(readFotaStatus(dataDir))) {
@@ -88,7 +100,7 @@ export function getVehiclePollInfo(
   }
   const state = readVehicleState(dataDir);
   const reason = vehiclePollReason(state, now);
-  const intervalSec = reason === "driving" ? driving : reason === "day" ? day : night;
+  const intervalSec = { driving, charging, day, night }[reason];
   return { intervalSec, reason, reasonLabel: vehiclePollLabel(reason) };
 }
 
@@ -106,13 +118,14 @@ export function getChangePollIntervalSec(env: Record<string, string>): number {
   return parsePollSec(env.NIO_POLL_INTERVAL, DEFAULT_CHANGE_SEC);
 }
 
-export function vehiclePollLabel(reason: "driving" | "day" | "night" | "fota"): string {
-  return { driving: "行驶中", day: "白天", night: "夜间", fota: "系统更新" }[reason];
+export function vehiclePollLabel(reason: "driving" | "charging" | "day" | "night" | "fota"): string {
+  return { driving: "行驶中", charging: "充电中", day: "白天", night: "夜间", fota: "系统更新" }[reason];
 }
 
 export function minVehiclePollSec(env: Record<string, string>): number {
   return Math.min(
     parsePollSec(env.NIO_VEHICLE_POLL_DRIVING_SEC, DEFAULT_DRIVING_SEC),
+    parsePollSec(env.NIO_VEHICLE_POLL_CHARGING_SEC, DEFAULT_CHARGING_SEC),
     parsePollSec(env.NIO_VEHICLE_POLL_DAY_SEC, DEFAULT_DAY_SEC),
     parsePollSec(env.NIO_VEHICLE_POLL_NIGHT_SEC, DEFAULT_NIGHT_SEC),
   );

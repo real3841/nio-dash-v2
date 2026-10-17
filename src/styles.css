@@ -2263,6 +2263,16 @@ a {
   font-weight: 600;
 }
 
+.auth-slot-status {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.auth-slot-status.failed {
+  color: var(--amber-text);
+}
+
 .auth-slot-address {
   display: flex;
   gap: 8px;

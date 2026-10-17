@@ -4,6 +4,7 @@ type VehiclePollEnv = {
   NIO_VEHICLE_POLL_DAY_SEC?: string;
   NIO_VEHICLE_POLL_NIGHT_SEC?: string;
   NIO_VEHICLE_POLL_DRIVING_SEC?: string;
+  NIO_VEHICLE_POLL_CHARGING_SEC?: string;
 } | undefined;
 
 type ChangePollEnv = { NIO_CHANGE_POLL_INTERVAL?: string } | undefined;
@@ -18,10 +19,13 @@ function seconds(value: string | undefined, fallback: number, minimum: number): 
   return Math.max(minimum, Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
 }
 
-/** 与原生 NativeScheduler.vehicleInterval 的规则保持一致。 */
+/** 与原生 NativeScheduler.vehicleInterval 的规则保持一致；vehicleState 用 pollVehicleState 计算。 */
 export function vehicleScheduleLabel(vehicle: VehiclePollEnv, vehicleState: number | null, hour: number): string {
   if (vehicleState === 1) {
     return `车况 行驶 ${formatPollInterval(seconds(vehicle?.NIO_VEHICLE_POLL_DRIVING_SEC, 900, 60))}`;
+  }
+  if (vehicleState === 3) {
+    return `车况 充电 ${formatPollInterval(seconds(vehicle?.NIO_VEHICLE_POLL_CHARGING_SEC, 600, 60))}`;
   }
   const day = hour >= 9 && hour <= 17;
   const value = day

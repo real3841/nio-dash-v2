@@ -442,8 +442,21 @@ export function batteryPackLabel(fullRangeKm: number): string {
   return "";
 }
 
-export function chargeStateLabel(state: number): string {
-  return ({ 0: "未充电", 1: "充电中", 2: "充电完成", 3: "充电故障" })[state] ?? `状态 ${state}`;
+export function chargeStateLabel(state: number | boolean): string {
+  const value = typeof state === "boolean" ? Number(state) : state;
+  return ({ 0: "未充电", 1: "充电中", 2: "充电完成", 3: "充电故障" })[value] ?? `状态 ${state}`;
+}
+
+/** 2.1.1 及更早的原生版会把 0/1 存成 false/true，两种写法都要识别。 */
+export function isChargingStatus(status: VehicleResponse["data"]["status"] | null | undefined): boolean {
+  return statusFlagOn(status?.soc_status?.charge_state);
+}
+
+/** 拉取频率用的车辆状态：非行驶但正在充电时按 3（充电中）处理。 */
+export function pollVehicleState(status: VehicleResponse["data"]["status"] | null | undefined): number | null {
+  const state = status?.exterior_status?.vehicle_state ?? null;
+  if (state !== 1 && isChargingStatus(status)) return 3;
+  return state;
 }
 
 export function vehicleStateLabel(state: number): string {

@@ -1,7 +1,7 @@
 {
   "name": "nio-dash-v2",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "蔚来车辆看板",
   "author": "NIO Dashboard",
   "main": "electron-dist/main.cjs",

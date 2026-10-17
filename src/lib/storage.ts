@@ -12,7 +12,13 @@ import type { CheckinData } from "./checkin";
 import { normalizeCheckinData } from "./checkin";
 import { DEMO_CHANGE, DEMO_VEHICLE } from "./demo-data";
 import type { VehicleResponse, VehicleSnapshot } from "./vehicle";
-import { extractVehicleStatus, isUsableVehicleResponse, normalizeVehicleResponse, parseSnapshotHistory } from "./vehicle";
+import {
+  extractVehicleStatus,
+  isUsableVehicleResponse,
+  normalizeVehicleResponse,
+  parseSnapshotHistory,
+  pollVehicleState,
+} from "./vehicle";
 
 const HISTORY_KEY = "nio_vehicle_history_v1";
 
@@ -101,7 +107,7 @@ export async function peekVehicleSignals(): Promise<{
     if (!isUsableVehicleResponse(payload)) return null;
     const status = extractVehicleStatus(payload);
     return {
-      vehicleState: status?.exterior_status.vehicle_state ?? null,
+      vehicleState: pollVehicleState(status),
       fotaStatus: status?.fota_status?.fota_status ?? null,
     };
   } catch {

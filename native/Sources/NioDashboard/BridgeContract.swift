@@ -28,10 +28,12 @@ enum JSONValue: Sendable, Equatable {
         switch value {
         case nil, is NSNull:
             self = .null
-        case let value as Bool:
-            self = .bool(value)
+        case let value as NSNumber where CFGetTypeID(value) == CFBooleanGetTypeID():
+            self = .bool(value.boolValue)
         case let value as NSNumber:
             self = .number(value.doubleValue)
+        case let value as Bool:
+            self = .bool(value)
         case let value as String:
             self = .string(value)
         case let value as [Any]:

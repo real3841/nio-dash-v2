@@ -2,12 +2,14 @@
 
 export const VEHICLE_POLL_DEFAULTS = {
   driving: 900,
+  charging: 600,
   day: 1800,
   night: 3600,
 } as const;
 
 export const VEHICLE_POLL_KEYS = [
   "NIO_VEHICLE_POLL_DRIVING_SEC",
+  "NIO_VEHICLE_POLL_CHARGING_SEC",
   "NIO_VEHICLE_POLL_DAY_SEC",
   "NIO_VEHICLE_POLL_NIGHT_SEC",
 ] as const;
@@ -28,12 +30,17 @@ export function isDrivingVehicleState(vehicleState: number | null): boolean {
   return vehicleState === 1;
 }
 
-/** 行驶中不论几点都用行驶间隔；非行驶才按白天/夜间 */
-export function vehiclePollReason(
-  vehicleState: number | null,
-  now = new Date(),
-): "driving" | "day" | "night" {
+/** 蔚来 vehicle_state：3 = 充电中（pollVehicleState 也会把驻车充电映射为 3） */
+export function isChargingVehicleState(vehicleState: number | null): boolean {
+  return vehicleState === 3;
+}
+
+type VehiclePollReason = "driving" | "charging" | "day" | "night";
+
+/** 行驶中、充电中不论几点都用各自间隔；其余按白天/夜间 */
+export function vehiclePollReason(vehicleState: number | null, now = new Date()): VehiclePollReason {
   if (isDrivingVehicleState(vehicleState)) return "driving";
+  if (isChargingVehicleState(vehicleState)) return "charging";
   return isDaytime(now) ? "day" : "night";
 }
 
@@ -43,18 +50,20 @@ export function isFotaUpdating(fota: { fota_status?: number } | null | undefined
   return typeof fota?.fota_status === "number" && fota.fota_status !== 0;
 }
 
-export function vehiclePollLabel(reason: "driving" | "day" | "night" | "fota"): string {
-  return { driving: "行驶中", day: "白天", night: "夜间", fota: "系统更新" }[reason];
+export function vehiclePollLabel(reason: VehiclePollReason | "fota"): string {
+  return { driving: "行驶中", charging: "充电中", day: "白天", night: "夜间", fota: "系统更新" }[reason];
 }
 
 export interface VehiclePollEnv {
   NIO_VEHICLE_POLL_DRIVING_SEC?: string;
+  NIO_VEHICLE_POLL_CHARGING_SEC?: string;
   NIO_VEHICLE_POLL_DAY_SEC?: string;
   NIO_VEHICLE_POLL_NIGHT_SEC?: string;
 }
 
 export interface VehiclePollIntervals {
   driving: number;
+  charging: number;
   day: number;
   night: number;
 }
@@ -64,6 +73,8 @@ export function normalizeVehiclePollEnv(env: VehiclePollEnv): Required<VehiclePo
   return {
     NIO_VEHICLE_POLL_DRIVING_SEC:
       env.NIO_VEHICLE_POLL_DRIVING_SEC?.trim() || String(VEHICLE_POLL_DEFAULTS.driving),
+    NIO_VEHICLE_POLL_CHARGING_SEC:
+      env.NIO_VEHICLE_POLL_CHARGING_SEC?.trim() || String(VEHICLE_POLL_DEFAULTS.charging),
     NIO_VEHICLE_POLL_DAY_SEC:
       env.NIO_VEHICLE_POLL_DAY_SEC?.trim() || String(VEHICLE_POLL_DEFAULTS.day),
     NIO_VEHICLE_POLL_NIGHT_SEC:
@@ -75,6 +86,7 @@ export function getVehiclePollIntervals(env: VehiclePollEnv): VehiclePollInterva
   const n = normalizeVehiclePollEnv(env);
   return {
     driving: parsePollSec(n.NIO_VEHICLE_POLL_DRIVING_SEC, VEHICLE_POLL_DEFAULTS.driving),
+    charging: parsePollSec(n.NIO_VEHICLE_POLL_CHARGING_SEC, VEHICLE_POLL_DEFAULTS.charging),
     day: parsePollSec(n.NIO_VEHICLE_POLL_DAY_SEC, VEHICLE_POLL_DEFAULTS.day),
     night: parsePollSec(n.NIO_VEHICLE_POLL_NIGHT_SEC, VEHICLE_POLL_DEFAULTS.night),
   };
@@ -96,7 +108,7 @@ export function getVehiclePollInfo(
   fota?: { fota_status?: number } | null,
 ): {
   intervalSec: number;
-  reason: "driving" | "day" | "night" | "fota";
+  reason: VehiclePollReason | "fota";
   reasonLabel: string;
   intervals: VehiclePollIntervals;
 } {
@@ -110,14 +122,12 @@ export function getVehiclePollInfo(
     };
   }
   const reason = vehiclePollReason(vehicleState, now);
-  const intervalSec =
-    reason === "driving" ? intervals.driving : reason === "day" ? intervals.day : intervals.night;
-  return { intervalSec, reason, reasonLabel: vehiclePollLabel(reason), intervals };
+  return { intervalSec: intervals[reason], reason, reasonLabel: vehiclePollLabel(reason), intervals };
 }
 
 export function minVehiclePollSec(env: VehiclePollEnv): number {
   const intervals = getVehiclePollIntervals(env);
-  return Math.min(intervals.driving, intervals.day, intervals.night);
+  return Math.min(intervals.driving, intervals.charging, intervals.day, intervals.night);
 }
 
 export function isVehiclePollKey(key: string): boolean {
@@ -148,7 +158,7 @@ export function formatPollSummary(
   changePollSec: number | undefined,
 ): string {
   if (intervals) {
-    return `行驶 ${intervals.driving}s · 白天 ${intervals.day}s · 夜间 ${intervals.night}s · 当前「${reasonLabel ?? "—"}」${vehiclePollSec ?? "—"}s · 换电${changePollLabel(changePollSec)}`;
+    return `行驶 ${intervals.driving}s · 充电 ${intervals.charging}s · 白天 ${intervals.day}s · 夜间 ${intervals.night}s · 当前「${reasonLabel ?? "—"}」${vehiclePollSec ?? "—"}s · 换电${changePollLabel(changePollSec)}`;
   }
   return `页面重读 ${vehiclePollSec ?? "—"}s · 换电${changePollLabel(changePollSec)}`;
 }
