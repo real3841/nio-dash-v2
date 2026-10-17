@@ -175,21 +175,26 @@ actor AppStorage {
 
     /// 2.0 早期版本曾将本机配置迁入钥匙串。用户选择恢复 config.env 后，
     /// 仅首次读取旧值并写回权限为 0600 的本机配置文件。
-    func restoreSecretsFromKeychain(_ keychain: KeychainStore) throws -> [String] {
+    /// 用户在系统弹窗中拒绝某一项时跳过该项，仍写入迁移标记，避免每次启动重复弹窗。
+    func restoreSecretsFromKeychain(_ keychain: some LegacySecretStore) throws -> [String] {
         let contents = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         let environment = EnvironmentFile(contents: contents)
         guard environment.values[Self.secretStorageKey] != "file" else { return [] }
         var restored: [String: String] = [Self.secretStorageKey: "file"]
-        for key in Self.secretKeys {
+        for key in Self.secretKeys.sorted() {
             if let existing = environment.values[key], !existing.isEmpty {
                 continue
             }
-            if let value = try keychain.read(key), !value.isEmpty {
+            if let value = try? keychain.read(key), !value.isEmpty {
                 restored[key] = value
             }
         }
         try atomicWrite(Data(environment.rendered(replacing: restored).utf8), to: configURL)
-        return restored.keys.filter { Self.secretKeys.contains($0) }.sorted()
+        let restoredKeys = restored.keys.filter { Self.secretKeys.contains($0) }.sorted()
+        for key in restoredKeys {
+            try? keychain.delete(key)
+        }
+        return restoredKeys
     }
 
     func secretConfigurationState() -> [String: Bool] {
@@ -292,7 +297,12 @@ actor AppStorage {
     }
 }
 
-final class KeychainStore: @unchecked Sendable {
+protocol LegacySecretStore: Sendable {
+    func read(_ account: String) throws -> String?
+    func delete(_ account: String) throws
+}
+
+final class KeychainStore: LegacySecretStore, @unchecked Sendable {
     private let service: String
 
     init(service: String = "com.nio.vehicle-dashboard.native") {

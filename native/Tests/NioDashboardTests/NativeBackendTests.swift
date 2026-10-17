@@ -55,6 +55,60 @@ import Testing
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
 }
 
+private final class FakeLegacySecretStore: LegacySecretStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String]
+    private let denied: Set<String>
+    private(set) var reads: [String] = []
+
+    init(values: [String: String], denied: Set<String>) {
+        self.values = values
+        self.denied = denied
+    }
+
+    func read(_ account: String) throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        reads.append(account)
+        if denied.contains(account) { throw NativeError.storage("denied") }
+        return values[account]
+    }
+
+    func delete(_ account: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        values.removeValue(forKey: account)
+    }
+
+    func value(_ account: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+}
+
+@Test func keychainRestoreSkipsDeniedItemsAndRunsOnce() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = try AppStorage(rootURL: root)
+    let configURL = await storage.configURL
+    try Data("NIO_VEHICLE_API_URL=https://example.invalid\n".utf8).write(to: configURL)
+    let keychain = FakeLegacySecretStore(
+        values: ["NIO_VEHICLE_ACCESS_TOKEN": "restored-value", "NIO_CHANGE_ACCESS_TOKEN": "denied-value"],
+        denied: ["NIO_CHANGE_ACCESS_TOKEN"]
+    )
+
+    let restored = try await storage.restoreSecretsFromKeychain(keychain)
+
+    #expect(restored == ["NIO_VEHICLE_ACCESS_TOKEN"])
+    let env = try await storage.environment(includingSecrets: true)
+    #expect(env["NIO_VEHICLE_ACCESS_TOKEN"] == "restored-value")
+    #expect(env["NIO_CHANGE_ACCESS_TOKEN"] == nil)
+    #expect(env["NIO_SECRET_STORAGE"] == "file")
+    #expect(keychain.value("NIO_VEHICLE_ACCESS_TOKEN") == nil)
+
+    let readsAfterFirstLaunch = keychain.reads.count
+    #expect(try await storage.restoreSecretsFromKeychain(keychain).isEmpty)
+    #expect(keychain.reads.count == readsAfterFirstLaunch)
+}
+
 @Test func photoServiceRejectsOversizedInput() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native" src="https://img.shields.io/badge/native-2.1.0-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.1-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -44,10 +44,10 @@
 - 紧凑面板的车辆区域和「看板」打开完整窗口；Token、日志直接定位到对应设置页。
 - Swift actor 负责存储、同步锁、调度和脱敏日志，网络统一使用 `URLSession` 与系统 TLS 校验。
 - React 通过版本化 WK bridge 与原生服务通信；Electron / NAS 仍使用兼容的 HTTP transport。
-- Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件。
+- Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件，并从钥匙串删除。系统此时可能弹窗请求访问钥匙串，选「始终允许」即可；选「拒绝」的项会被跳过（之后在「更新 Token」中重新填写），以后不会再弹窗。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.0`。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.1`。
 
 ### 车辆看板卡片
 
@@ -70,7 +70,7 @@
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.0.app`）。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.1.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.0`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.1`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -300,6 +300,11 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 
 ## 更新日志
 
+### v2.1.1
+
+- **应用图标**：使用 NIO 标志作为应用图标，不再显示系统默认空白图标
+- **钥匙串弹窗修复**：从 2.0 测试版升级时，在钥匙串弹窗中点「拒绝」不再导致每次启动重复弹窗；已写回 `config.env` 的旧值会从钥匙串删除，之后不再访问钥匙串
+
 ### v2.1.0
 
 - **紧凑面板重做**：鼠标悬停状态栏图标即展开，移开或点击面板外自动收起；展开 / 收起带缩放动画，高度随内容自适应
@@ -308,7 +313,6 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 - **车辆图**：使用 NIO 标志与横向车辆示意图，去掉外边框，圆角由原生窗口裁切
 - **凭据存储**：Token、Cookie 与服务密钥改回保存在本机 `config.env`（权限 `0600`）；2.0 测试版存入钥匙串的值会在首次启动时自动写回
 - **兼容性**：支持车况接口返回布尔值形式的状态字段
-- **应用图标**：使用 NIO 标志作为应用图标，不再显示系统默认空白图标
 - **打包**：应用改名为 `NIO-Dash_<版本>.app`；安装包文件名和应用版本号统一从 `package.json` 读取
 
 ### v2.0.0-beta.1
