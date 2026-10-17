@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     private var dashboardSurface: WebSurface?
     private var backend: NativeBackend?
     private var isTerminating = false
+    private var panelPinnedByClick = false
+    private var hoverDismissTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -77,6 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
             button.target = self
             button.action = #selector(toggleCompactPanel)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            ))
         }
         statusItem = item
     }
@@ -93,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         panel.isFloatingPanel = true
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.hidesOnDeactivate = true
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -107,6 +115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         compactSurface.webView.autoresizingMask = [.width, .height]
         compactSurface.webView.frame = panel.contentView?.bounds ?? .zero
         panel.contentView = compactSurface.webView
+        compactSurface.webView.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
         compactSurface.load()
         compactPanel = panel
         self.compactSurface = compactSurface
@@ -156,17 +170,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
 
     @objc private func toggleCompactPanel() {
         guard let panel = compactPanel else { return }
-        if panel.isVisible {
+        hoverDismissTask?.cancel()
+        if panel.isVisible, panelPinnedByClick {
+            panelPinnedByClick = false
             panel.orderOut(nil)
         } else {
-            positionCompactPanel()
-            panel.orderFrontRegardless()
+            panelPinnedByClick = true
+            showCompactPanel()
         }
     }
 
+    @objc func mouseEntered(with event: NSEvent) {
+        hoverDismissTask?.cancel()
+        if !panelPinnedByClick {
+            showCompactPanel()
+        }
+    }
+
+    @objc func mouseExited(with event: NSEvent) {
+        scheduleHoverDismiss()
+    }
+
+    private func showCompactPanel() {
+        positionCompactPanel()
+        compactPanel?.orderFrontRegardless()
+    }
+
+    private func scheduleHoverDismiss() {
+        hoverDismissTask?.cancel()
+        hoverDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let self, !Task.isCancelled, !panelPinnedByClick else { return }
+            if !mouseIsInsideStatusItemOrPanel() {
+                compactPanel?.orderOut(nil)
+            }
+        }
+    }
+
+    private func mouseIsInsideStatusItemOrPanel() -> Bool {
+        let location = NSEvent.mouseLocation
+        if let panel = compactPanel, panel.isVisible, panel.frame.contains(location) {
+            return true
+        }
+        guard let button = statusItem?.button, let window = button.window else { return false }
+        let windowRect = button.convert(button.bounds, to: nil)
+        return window.convertToScreen(windowRect).contains(location)
+    }
+
     private func positionCompactPanel() {
-        guard let panel = compactPanel, let buttonWindow = statusItem?.button?.window else { return }
-        let buttonFrame = buttonWindow.convertToScreen(buttonWindow.contentView?.frame ?? .zero)
+        guard let panel = compactPanel, let button = statusItem?.button, let buttonWindow = button.window else { return }
+        let buttonFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let visible = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         var x = buttonFrame.midX - panel.frame.width / 2
         x = min(max(x, visible.minX + 8), visible.maxX - panel.frame.width - 8)
@@ -175,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     }
 
     func openDashboard(route: String?) {
+        panelPinnedByClick = false
         compactPanel?.orderOut(nil)
         guard let window = dashboardWindow else { return }
         window.makeKeyAndOrderFront(nil)
@@ -185,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     }
 
     func hideCompactPanel() {
+        panelPinnedByClick = false
         compactPanel?.orderOut(nil)
     }
 
