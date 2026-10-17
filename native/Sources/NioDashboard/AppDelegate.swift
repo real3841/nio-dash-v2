@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     private var isTerminating = false
     private var panelPinnedByClick = false
     private var hoverDismissTask: Task<Void, Never>?
+    private var globalClickMonitor: Any?
+    private var localClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
             }
             configureStatusItem()
             configureWindows(backend: backend)
+            configurePanelDismissal()
             if environment["NIO_E2E_SHOW_PANEL"] == "1" {
                 compactPanel?.center()
                 compactPanel?.orderFrontRegardless()
@@ -59,6 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         if let backend {
             Task { await backend.scheduler.stop() }
@@ -149,6 +154,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         dashboardSurface.load()
         dashboardWindow = window
         self.dashboardSurface = dashboardSurface
+    }
+
+    private func configurePanelDismissal() {
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.dismissCompactPanelWhenClickingOutside()
+            }
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.dismissCompactPanelWhenClickingOutside()
+            }
+            return event
+        }
+    }
+
+    private func dismissCompactPanelWhenClickingOutside() {
+        guard compactPanel?.isVisible == true, !mouseIsInsideStatusItemOrPanel() else { return }
+        panelPinnedByClick = false
+        hoverDismissTask?.cancel()
+        compactPanel?.orderOut(nil)
     }
 
     private func resolveWebRoot() -> URL {
