@@ -8,7 +8,8 @@ interface ApiStatusBadgeProps {
 }
 
 export function ApiStatusBadge({ status, meta }: ApiStatusBadgeProps) {
-  const glyph = status === "ok" ? "✓" : status === "error" ? "✕" : status === "pending" ? "…" : "—";
+  const glyph =
+    status === "ok" ? "✓" : status === "partial" ? "!" : status === "error" ? "✕" : status === "pending" ? "…" : "—";
   const title = apiStatusDetail(status, meta);
 
   return (

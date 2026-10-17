@@ -235,6 +235,7 @@ actor SyncCoordinator {
         }
 
         var statusPayload: JSONValue?
+        var statusError: (any Error)?
         if let url = env["NIO_VEHICLE_STATUS_URL"], !url.isEmpty {
             do {
                 let payload = try await requestJSON(url, method: "GET", token: extraToken, body: nil, extraHeaders: headers)
@@ -242,6 +243,7 @@ actor SyncCoordinator {
                 statusPayload = payload
                 await recordSlot("status", nil)
             } catch {
+                statusError = error
                 await recordSlot("status", error)
                 await log.append(category: "vehicle", level: "warning", message: "车况整包同步失败：\(error.localizedDescription)")
             }
@@ -257,11 +259,13 @@ actor SyncCoordinator {
         }
         try await storage.writeJSON(payload, relativePath: "vehicle.json")
         try await appendVehicleHistory(payload)
-        try await writeMeta("last-fetch.json", ok: true)
 
-        for (slot, urlKey, output) in [
-            ("journey", "NIO_JOURNEY_API_URL", "journey.json"),
-            ("daily", "NIO_DAILY_API_URL", "daily.json"),
+        var failedParts: [String] = []
+        if widgetError != nil { failedParts.append("车辆状态") }
+        if statusError != nil { failedParts.append("车况整包") }
+        for (slot, label, urlKey, output) in [
+            ("journey", "最近行程", "NIO_JOURNEY_API_URL", "journey.json"),
+            ("daily", "当日里程", "NIO_DAILY_API_URL", "daily.json"),
         ] {
             guard let url = env[urlKey], !url.isEmpty else { continue }
             do {
@@ -276,10 +280,16 @@ actor SyncCoordinator {
                 try await storage.writeJSON(envelope, relativePath: output)
                 try await persistExtraHistory(output: output, envelope: envelope)
             } catch {
+                failedParts.append(label)
                 await recordSlot(slot, error)
                 await log.append(category: "vehicle", level: "warning", message: "\(output) 补充同步失败：\(error.localizedDescription)")
             }
         }
+        try await writeMeta(
+            "last-fetch.json",
+            ok: true,
+            warning: failedParts.isEmpty ? nil : "\(failedParts.joined(separator: "、"))失效，其余数据正常"
+        )
     }
 
     /// nil 表示没配车辆状态接口；抛错表示配了但拼不出可用的请求
@@ -804,13 +814,20 @@ actor SyncCoordinator {
         try? await storage.writeJSON(.object(slots), relativePath: "auth-slots.json")
     }
 
-    private func writeMeta(_ name: String, ok: Bool, error: String? = nil, errorKind: String? = nil) async throws {
+    private func writeMeta(
+        _ name: String,
+        ok: Bool,
+        error: String? = nil,
+        errorKind: String? = nil,
+        warning: String? = nil
+    ) async throws {
         try await storage.writeJSON(
             .object([
                 "ok": .bool(ok),
                 "at": .number(Date().timeIntervalSince1970 * 1000),
                 "error": error.map(JSONValue.string) ?? .null,
                 "errorKind": errorKind.map(JSONValue.string) ?? .null,
+                "warning": warning.map(JSONValue.string) ?? .null,
             ]),
             relativePath: name
         )

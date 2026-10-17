@@ -1,7 +1,7 @@
 import type { FetchMeta } from "./storage";
 import { errorKindHint } from "./nio-api-errors";
 
-export type ApiConfigStatus = "ok" | "error" | "pending" | "unset";
+export type ApiConfigStatus = "ok" | "partial" | "error" | "pending" | "unset";
 
 export function resolveApiStatus(
   meta: FetchMeta | null | undefined,
@@ -9,13 +9,16 @@ export function resolveApiStatus(
 ): ApiConfigStatus {
   if (!configured) return "unset";
   if (!meta) return "pending";
-  return meta.ok ? "ok" : "error";
+  if (!meta.ok) return "error";
+  return meta.warning ? "partial" : "ok";
 }
 
 export function apiStatusLabel(status: ApiConfigStatus): string {
   switch (status) {
     case "ok":
       return "API 配置正确，最近拉取成功";
+    case "partial":
+      return "最近拉取成功，但有接口失效";
     case "error":
       return "API 配置错误或拉取失败";
     case "pending":
@@ -83,6 +86,9 @@ export function apiStatusDetail(
   meta: FetchMeta | null | undefined,
 ): string {
   const base = apiStatusLabel(status);
+  if (status === "partial" && meta?.warning) {
+    return `${base}：${meta.warning}（打开「更新 Token」处理标黄的那条）`;
+  }
   if (status === "error" && meta?.error) {
     const hint = errorKindHint(meta.errorKind);
     return hint ? `${base}：${meta.error}（${hint}）` : `${base}：${meta.error}`;

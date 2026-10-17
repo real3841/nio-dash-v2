@@ -504,7 +504,9 @@ final class NativeBackend: @unchecked Sendable {
         return .object([
             "ok": .bool(true),
             "slots": .array(definitions.map { slot in
-                let status = recorded[slot.id]?.object ?? [:]
+                let optional: Set = ["status", "journey", "daily"]
+                let unset = optional.contains(slot.id) && env[slot.urlKey]?.isEmpty != false
+                let status = unset ? [:] : recorded[slot.id]?.object ?? [:]
                 return .object([
                     "id": .string(slot.id),
                     "label": .string(slot.label),

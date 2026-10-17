@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native" src="https://img.shields.io/badge/native-2.1.2-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.3-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -47,7 +47,7 @@
 - Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件，并从钥匙串删除。系统此时可能弹窗请求访问钥匙串，选「始终允许」即可；选「拒绝」的项会被跳过（之后在「更新 Token」中重新填写），以后不会再弹窗。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.2`。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.3`。
 
 ### 车辆看板卡片
 
@@ -70,7 +70,7 @@
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.2.app`）。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.3.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.2`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.3`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -301,6 +301,11 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `npm run serve:api` | 仅 API 服务 |
 
 ## 更新日志
+
+### v2.1.3
+
+- **车辆 API 显示「部分失效」**：车况数据拿到了、但「车辆状态」「车况整包」「最近行程」「当日里程」中有接口失效时，顶部「车辆 API」显示黄色 !，悬停可看是哪一条，不再显示绿勾
+- **未配置的接口不再显示旧错误**：「更新 Token」里没有填地址的车况整包、最近行程、当日里程显示「还没有拉取记录」，不再保留以前的失败标记
 
 ### v2.1.2
 

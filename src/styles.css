@@ -2052,6 +2052,7 @@ a {
   border-color: var(--red-line);
 }
 
+.api-status-partial,
 .api-status-pending {
   color: var(--amber-text);
   background: var(--amber-soft);

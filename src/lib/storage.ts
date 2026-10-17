@@ -27,6 +27,8 @@ export interface FetchMeta {
   at: number;
   error: string | null;
   errorKind?: "sign" | "auth" | "generic" | null;
+  /** 拉取成功但部分接口失效 */
+  warning?: string | null;
 }
 
 async function readJsonResponse<T>(res: Response, label: string): Promise<T> {
