@@ -6,7 +6,14 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { chargeStateLabel, fmtTime, vehicleStateLabel, type VehicleResponse } from "../lib/vehicle";
+import {
+  chargeStateLabel,
+  fmtTime,
+  statusFlagOn,
+  statusFlagOpen,
+  vehicleStateLabel,
+  type VehicleResponse,
+} from "../lib/vehicle";
 import { formatChargingPowerKw, onOff, windowPosLabel } from "../lib/vehicle-display";
 import { formatDurationSec, workStateLabel, type PowerFile } from "../lib/power";
 import { localDayKey } from "../lib/date-utils";
@@ -91,10 +98,6 @@ function numOf(block: Record<string, unknown> | undefined, key: string): number 
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-function isOpen(value: number | undefined): boolean {
-  return value != null && value !== 1;
-}
-
 function tyreTone(press: number | null, temp: number | null): Spot["tone"] {
   if (press == null) return "idle";
   if (press < 2.2 || press > 3.4 || (temp != null && temp > 75)) return "warn";
@@ -172,7 +175,7 @@ export function VehicleHero({ status: s, power, variant = "new", busy = null, on
 
   const soc = s.soc_status.soc;
   const socExtra = s.soc_status as unknown as Record<string, number>;
-  const locked = s.door_status.vehicle_lock_status === 1;
+  const locked = statusFlagOn(s.door_status.vehicle_lock_status);
   const charging = s.soc_status.charge_state === 1;
   const doors = s.door_status;
   const win = s.window_status ?? {};
@@ -200,7 +203,7 @@ export function VehicleHero({ status: s, power, variant = "new", busy = null, on
   };
 
   const doorSpot = (id: string, title: string, doorKey: string, winKey: string, x: number, y: number): Spot => {
-    const open = isOpen(doors[doorKey]);
+    const open = statusFlagOpen(doors[doorKey]);
     return {
       id,
       title,
@@ -214,9 +217,9 @@ export function VehicleHero({ status: s, power, variant = "new", busy = null, on
     };
   };
 
-  const hoodOpen = isOpen(doors.engine_hood_ajar_status);
-  const tailOpen = isOpen(doors.tailgate_ajar_status);
-  const portOpen = isOpen(doors.second_charge_port_ajar_status);
+  const hoodOpen = statusFlagOpen(doors.engine_hood_ajar_status);
+  const tailOpen = statusFlagOpen(doors.tailgate_ajar_status);
+  const portOpen = statusFlagOpen(doors.second_charge_port_ajar_status);
   const headOn = (light.head_light_on ?? 0) >= 1;
   const drlOn = (light.day_ti_runng_li_sts ?? 0) >= 1;
   const parkOn = (light.parking_light_le_on ?? 0) >= 1 || (light.parking_light_ri_on ?? 0) >= 1;

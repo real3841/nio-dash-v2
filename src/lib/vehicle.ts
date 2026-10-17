@@ -99,6 +99,16 @@ export interface VehicleResponse {
   };
 }
 
+/** 兼容旧接口 1/0 与 RVS 新接口 true/false。 */
+export function statusFlagOn(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+/** 门、舱盖和充电口：1/true 表示关闭，其他明确值表示打开。 */
+export function statusFlagOpen(value: unknown): boolean {
+  return value === false || (typeof value === "number" && value !== 1);
+}
+
 
 export const HISTORY_MAX_POINTS = 2000;
 

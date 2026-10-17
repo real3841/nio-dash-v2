@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchChangeData, fetchPowerData, fetchVehicleData, loadFetchMeta } from "./lib/storage";
-import { extractVehicleStatus } from "./lib/vehicle";
+import { extractVehicleStatus, statusFlagOn } from "./lib/vehicle";
 import { subscribeNativeEvent } from "./platform/native-events";
 import { appTransport } from "./platform/transport";
 import type { NativeRoute } from "./platform/transport-contract";
@@ -66,7 +66,7 @@ export function TrayPanel() {
       range: status?.soc_status.remaining_range ?? null,
       state: status ? vehicleState(status.exterior_status.vehicle_state) : EMPTY.state,
       temperature: status?.hvac_status.outside_temperature ?? null,
-      locked: status ? status.door_status.vehicle_lock_status === 1 : null,
+      locked: status ? statusFlagOn(status.door_status.vehicle_lock_status) : null,
       tyre: tyreLabel(status?.tyre_status),
       warnings: warningCount,
       power: powerRecord?.charging

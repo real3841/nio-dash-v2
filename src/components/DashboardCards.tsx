@@ -38,6 +38,8 @@ import {
   heatLevelLabel,
   mapsUrl,
   modeActive,
+  statusFlagOn,
+  statusFlagOpen,
   vehicleStateLabel,
   type VehicleResponse,
 } from "../lib/vehicle";
@@ -177,10 +179,6 @@ function cardIcon(id: string): ReactNode {
 }
 
 
-function doorOpen(status: number): boolean {
-  return status !== 1;
-}
-
 function EmptyHint() {
   return <p className="muted card-empty-hint">暂无数据</p>;
 }
@@ -233,7 +231,7 @@ export const DashboardCards = memo(function DashboardCards({
     );
   }
   const soc = s.soc_status.soc;
-  const locked = s.door_status.vehicle_lock_status === 1;
+  const locked = statusFlagOn(s.door_status.vehicle_lock_status);
   const socExtra = s.soc_status as Record<string, number | boolean>;
   const hvacExtra = s.hvac_status as Record<string, number | boolean>;
   const heatExtra = s.heating_status as Record<string, number>;
@@ -241,13 +239,13 @@ export const DashboardCards = memo(function DashboardCards({
   const defenderWarnCount = s.offcar_mode_status.defender_mode_warn_count ?? 0;
 
   const visualDoors = [
-    { label: "左前", open: doorOpen(s.door_status.door_ajar_front_left_status) },
-    { label: "右前", open: doorOpen(s.door_status.door_ajar_front_right_status) },
-    { label: "左后", open: doorOpen(s.door_status.door_ajar_rear_left_status) },
-    { label: "右后", open: doorOpen(s.door_status.door_ajar_rear_right_status) },
-    { label: "前备箱", open: doorOpen(s.door_status.engine_hood_ajar_status) },
-    { label: "尾门", open: doorOpen(s.door_status.tailgate_ajar_status) },
-    { label: "充电口", open: doorOpen(s.door_status.second_charge_port_ajar_status) },
+    { label: "左前", open: statusFlagOpen(s.door_status.door_ajar_front_left_status) },
+    { label: "右前", open: statusFlagOpen(s.door_status.door_ajar_front_right_status) },
+    { label: "左后", open: statusFlagOpen(s.door_status.door_ajar_rear_left_status) },
+    { label: "右后", open: statusFlagOpen(s.door_status.door_ajar_rear_right_status) },
+    { label: "前备箱", open: statusFlagOpen(s.door_status.engine_hood_ajar_status) },
+    { label: "尾门", open: statusFlagOpen(s.door_status.tailgate_ajar_status) },
+    { label: "充电口", open: statusFlagOpen(s.door_status.second_charge_port_ajar_status) },
   ];
 
   const openCount = visualDoors.filter((d) => d.open).length;
