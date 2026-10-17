@@ -1,0 +1,20 @@
+---
+description: 用户说“打包”或要求发布新版本时的流程
+alwaysApply: true
+---
+
+# 打包流程
+
+用户说“打包”（或“打包 vX.Y”）时，按顺序完成：
+
+1. **确定版本号**：用户给了版本就用它（`v2.1` → `2.1.0`）；没给就在当前版本上递增 patch，并告知用户。
+2. **改版本号**：
+   - `npm version <版本> --no-git-tag-version`（同步 `package.json` 和 `package-lock.json`）
+   - `native/Resources/Info.plist` 的 `CFBundleShortVersionString` 与 `CFBundleVersion`（如 `2.1.0` → `20100`）
+   - 应用名 `NIO-Dash_<版本>.app` 与压缩包名由 `native/scripts/build-app.sh` 从 `package.json` 读取，无需手改；脚本会删除 `release-native/` 下旧的 `.app`，只保留历史压缩包
+3. **每次都要更新 `README.md`**：
+   - 用 `git log <上一个版本提交>..HEAD` 汇总改动，在「更新日志」顶部新增 `### v<版本>`，用面向用户的中文描述
+   - 同步顶部版本徽章、「2.x 原生版」说明和打包章节中的版本号
+   - 检查 README 中与新代码不一致的描述（存储方式、交互方式等）并一并修正
+4. **测试与打包**：`npm run typecheck`、`npm run native:test`、`npm run native:pack`；脚本自带签名、架构、体积与隐私检查，失败须如实报告，不得绕过
+5. **提交**：`chore: release v<版本>`，并打 tag `v<版本>`；推送和发布 GitHub Release 前先征得用户同意

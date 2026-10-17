@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native beta" src="https://img.shields.io/badge/native_beta-2.0.0-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.0-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -27,7 +27,7 @@
 
 ## 功能概览
 
-- **原生状态栏面板。** 点击车图标打开紧凑面板，实时查看电量、续航、锁车、轮胎、家充和同步状态。
+- **原生状态栏面板。** 鼠标移到车图标上即展开紧凑面板，实时查看电量、续航、锁车、轮胎、家充和同步状态；面板内容可自定义。
 - **完整车辆看板。** 卡片支持拖拽、隐藏与恢复，覆盖车门、车窗、轮胎、空调、灯光和软件状态。
 - **五角度拖动车辆。** 使用自己的侧面、前后 45°、正前和正后照片；拖动或方向键切换角度。
 - **行程与趋势。** 按天整理行驶路径、日增里程、电量、总里程与家充趋势。
@@ -36,18 +36,18 @@
 - **问题可追踪。** 运行日志区分签名、Token 与网络错误，并提供对应处理入口。
 - **数据留在本机。** 配置与历史记录保存在本机数据目录，不随安装包上传。
 
-## 2.0 原生版
+## 2.x 原生版
 
-2.0 使用 **Swift / AppKit + WKWebView**，安装包不再携带 Electron、Node 或 localhost HTTP 服务。
+2.x 使用 **Swift / AppKit + WKWebView**，安装包不再携带 Electron、Node 或 localhost HTTP 服务。
 
-- `NSStatusItem` 提供系统状态栏入口，点击打开无边框紧凑面板。
+- `NSStatusItem` 提供系统状态栏入口，悬停展开无边框紧凑面板，移开或点击面板外自动收起。
 - 紧凑面板的车辆区域和「看板」打开完整窗口；Token、日志直接定位到对应设置页。
 - Swift actor 负责存储、同步锁、调度和脱敏日志，网络统一使用 `URLSession` 与系统 TLS 校验。
 - React 通过版本化 WK bridge 与原生服务通信；Electron / NAS 仍使用兼容的 HTTP transport。
-- Token、Cookie 与服务密钥迁入 macOS Keychain；React 只读取“已配置”状态，不取回明文。
+- Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为稳定版保留。原生版在功能与隐私检查全部通过后以 `v2.0.0-beta.1` 先行发布。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.0`。
 
 ### 车辆看板卡片
 
@@ -70,7 +70,7 @@
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64-mac.zip`，解压后打开 **蔚来车辆看板.app**。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.0.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -98,14 +98,14 @@ npm run electron:dev
 
 ### 打包 Mac 应用（可直接运行）
 
-原生 2.0（Apple Silicon）：
+原生 2.x（Apple Silicon）：
 
 ```bash
 npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-2.0.0-beta.1-arm64.zip`。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.0`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -149,13 +149,13 @@ npm run dev           # 另开终端：Vite 前端
 
 | 场景 | 配置文件 | 数据目录 |
 |------|----------|----------|
-| 原生 2.0 | `~/Library/Application Support/蔚来车辆看板/config.env` | `~/Library/Application Support/蔚来车辆看板/data/` |
+| 原生 2.x | `~/Library/Application Support/蔚来车辆看板/config.env` | `~/Library/Application Support/蔚来车辆看板/data/` |
 | 开发 `electron:dev` | `~/Library/Application Support/nio-mac/config.env` | `~/Library/Application Support/nio-mac/data/` |
 | 打包 `.app` | `~/Library/Application Support/蔚来车辆看板/config.env` | `~/Library/Application Support/蔚来车辆看板/data/` |
 
 参考模板：`deploy/.env.example`
 
-原生版首次启动会原地兼容现有 JSON 和 `card-layout.json`，再把敏感配置原子迁入 Keychain 并清空配置文件中的对应明文。迁移前建议自行备份该目录；应用不会上传备份。
+原生版首次启动会原地兼容现有 JSON 和 `card-layout.json`。敏感配置保存在 `config.env`（权限 `0600`），请勿把该文件上传或分享；应用不会上传任何配置或备份。
 
 ### 如何获取 API 配置（抓包）
 
@@ -300,7 +300,17 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 
 ## 更新日志
 
-### v2.0.0-beta.1（开发中）
+### v2.1.0
+
+- **紧凑面板重做**：鼠标悬停状态栏图标即展开，移开或点击面板外自动收起；展开 / 收起带缩放动画，高度随内容自适应
+- **面板可自定义**：面板中显示的模块和顺序可编辑，并保存在本机
+- **面板新增信息**：车况 / 换电拉取间隔，以及本月家充电量、次数、时长与上次充电
+- **车辆图**：使用 NIO 标志与横向车辆示意图，去掉外边框，圆角由原生窗口裁切
+- **凭据存储**：Token、Cookie 与服务密钥改回保存在本机 `config.env`（权限 `0600`）；2.0 测试版存入钥匙串的值会在首次启动时自动写回
+- **兼容性**：支持车况接口返回布尔值形式的状态字段
+- **打包**：应用改名为 `NIO-Dash_<版本>.app`；安装包文件名和应用版本号统一从 `package.json` 读取
+
+### v2.0.0-beta.1
 
 - **原生运行时**：Swift / AppKit 状态栏应用，双 WKWebView 窗口，无 Electron、Node 和本地 HTTP 服务
 - **紧凑面板**：车辆、电池、安全、轮胎、家充与同步状态共用实时快照，支持看板 / Token / 日志深链
