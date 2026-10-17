@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         let root = resolveWebRoot()
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 660),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         compactSurface.webView.autoresizingMask = [.width, .height]
         compactSurface.webView.frame = panel.contentView?.bounds ?? .zero
         compactSurface.webView.wantsLayer = true
-        compactSurface.webView.layer?.cornerRadius = 24
+        compactSurface.webView.layer?.cornerRadius = 28
         compactSurface.webView.layer?.masksToBounds = true
         panel.contentView = compactSurface.webView
         compactSurface.webView.addTrackingArea(NSTrackingArea(
