@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     private var hoverDismissTask: Task<Void, Never>?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
+    private var panelAnimationGeneration = 0
+    private var panelIsCollapsing = false
+    private static let panelScaleAnimationKey = "nio.panel.scale"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -110,19 +113,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         let compactSurface = WebSurface(
             entry: "tray",
             bundleRoot: root,
             backend: backend,
             commandHandler: self
         )
+        let container = NSView(frame: panel.contentView?.bounds ?? .zero)
+        container.wantsLayer = true
         compactSurface.webView.autoresizingMask = [.width, .height]
-        compactSurface.webView.frame = panel.contentView?.bounds ?? .zero
+        compactSurface.webView.frame = container.bounds
         compactSurface.webView.wantsLayer = true
         compactSurface.webView.layer?.cornerRadius = 28
         compactSurface.webView.layer?.masksToBounds = true
-        panel.contentView = compactSurface.webView
+        container.addSubview(compactSurface.webView)
+        panel.contentView = container
         compactSurface.webView.addTrackingArea(NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
@@ -172,9 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
 
     private func dismissCompactPanelWhenClickingOutside() {
         guard compactPanel?.isVisible == true, !mouseIsInsideStatusItemOrPanel() else { return }
-        panelPinnedByClick = false
-        hoverDismissTask?.cancel()
-        compactPanel?.orderOut(nil)
+        dismissCompactPanel()
     }
 
     private func resolveWebRoot() -> URL {
@@ -201,8 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         guard let panel = compactPanel else { return }
         hoverDismissTask?.cancel()
         if panel.isVisible, panelPinnedByClick {
-            panelPinnedByClick = false
-            panel.orderOut(nil)
+            dismissCompactPanel()
         } else {
             panelPinnedByClick = true
             showCompactPanel()
@@ -221,8 +224,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     }
 
     private func showCompactPanel() {
-        positionCompactPanel()
-        compactPanel?.orderFrontRegardless()
+        guard let panel = compactPanel else { return }
+        let collapsed = !panel.isVisible || panelIsCollapsing
+        panelAnimationGeneration += 1
+        panelIsCollapsing = false
+        if !panel.isVisible {
+            positionCompactPanel()
+        }
+        panel.orderFrontRegardless()
+        guard collapsed else { return }
+        resetPanelAppearance()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        panel.alphaValue = 0
+        animatePanelContent(appearing: true, duration: 0.2)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    /// 收起时把面板缩回状态栏图标，而不是直接消失。
+    private func dismissCompactPanel() {
+        panelPinnedByClick = false
+        hoverDismissTask?.cancel()
+        guard let panel = compactPanel, panel.isVisible, !panelIsCollapsing else { return }
+        panelAnimationGeneration += 1
+        let generation = panelAnimationGeneration
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            panel.orderOut(nil)
+            return
+        }
+        panelIsCollapsing = true
+        animatePanelContent(appearing: false, duration: 0.22)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, generation == self.panelAnimationGeneration else { return }
+                self.panelIsCollapsing = false
+                self.compactPanel?.orderOut(nil)
+                self.resetPanelAppearance()
+            }
+        })
+    }
+
+    private func animatePanelContent(appearing: Bool, duration: CFTimeInterval) {
+        guard let panel = compactPanel, let layer = panel.contentView?.layer else { return }
+        let bounds = layer.bounds
+        let anchorX = statusItemCenterX(in: panel) ?? bounds.midX
+        let scale: CGFloat = 0.2
+        // 以状态栏图标正下方的面板顶边为缩放中心（容器视图坐标 y 轴向上）。
+        var collapsed = CATransform3DMakeTranslation(anchorX * (1 - scale), bounds.height * (1 - scale), 0)
+        collapsed = CATransform3DScale(collapsed, scale, scale, 1)
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = appearing ? collapsed : CATransform3DIdentity
+        animation.toValue = appearing ? CATransform3DIdentity : collapsed
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: appearing ? .easeOut : .easeIn)
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = appearing
+        layer.add(animation, forKey: Self.panelScaleAnimationKey)
+    }
+
+    private func resetPanelAppearance() {
+        compactPanel?.contentView?.layer?.removeAnimation(forKey: Self.panelScaleAnimationKey)
+        compactPanel?.alphaValue = 1
+    }
+
+    private func statusItemCenterX(in panel: NSWindow) -> CGFloat? {
+        guard let button = statusItem?.button, let window = button.window else { return nil }
+        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return min(max(frame.midX - panel.frame.minX, 0), panel.frame.width)
     }
 
     private func scheduleHoverDismiss() {
@@ -231,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
             try? await Task.sleep(for: .milliseconds(350))
             guard let self, !Task.isCancelled, !panelPinnedByClick else { return }
             if !mouseIsInsideStatusItemOrPanel() {
-                compactPanel?.orderOut(nil)
+                dismissCompactPanel()
             }
         }
     }
@@ -257,8 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     }
 
     func openDashboard(route: String?) {
-        panelPinnedByClick = false
-        compactPanel?.orderOut(nil)
+        dismissCompactPanel()
         guard let window = dashboardWindow else { return }
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -268,8 +342,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     }
 
     func hideCompactPanel() {
-        panelPinnedByClick = false
-        compactPanel?.orderOut(nil)
+        dismissCompactPanel()
+    }
+
+    func resizeCompactPanel(height: Double) {
+        guard let panel = compactPanel else { return }
+        let screen = statusItem?.button?.window?.screen ?? panel.screen ?? NSScreen.main
+        let maxHeight = (screen?.visibleFrame.height ?? 900) - 16
+        let target = min(max(CGFloat(height.rounded(.up)), 360), maxHeight)
+        guard abs(panel.frame.height - target) >= 1 else { return }
+        var frame = panel.frame
+        frame.origin.y += frame.height - target
+        frame.size.height = target
+        panel.setFrame(frame, display: true)
+        if panel.isVisible {
+            positionCompactPanel()
+        }
     }
 
     func terminateApplication() {

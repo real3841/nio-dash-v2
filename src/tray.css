@@ -11,9 +11,11 @@ html, body, #tray-root {
   width: 100%;
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: transparent;
 }
+html::-webkit-scrollbar, body::-webkit-scrollbar, #tray-root::-webkit-scrollbar { display: none; }
 button { color: inherit; font: inherit; }
 
 .tray-panel {
@@ -202,6 +204,7 @@ button { color: inherit; font: inherit; }
 
 /* 2.0 compact panel */
 .tray-panel {
+  height: auto;
   padding: 16px 18px 14px;
   border-radius: 28px;
   background:
@@ -360,7 +363,35 @@ button { color: inherit; font: inherit; }
 }
 .tray-empty { grid-column: 1 / -1; margin: 18px 0; color: #7e8797; text-align: center; font-size: 12px; }
 
-.tray-panel footer { margin-top: 10px; }
+.tray-card-wide { grid-column: 1 / -1; }
+.tray-schedule { display: flex; gap: 6px; margin-left: auto; }
+.tray-schedule em {
+  padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 99px;
+  background: rgba(255,255,255,.05);
+  color: #b9c0ce;
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.tray-section-title { margin: 10px 0 6px; color: #6f7789; font-size: 10px; font-weight: 500; letter-spacing: .14em; }
+.tray-section-title + .tray-info-grid { margin-bottom: 2px; }
+.tray-month-card {
+  position: relative;
+  grid-column: 1 / -1;
+  border-color: rgba(255,130,90,.5);
+  background: linear-gradient(180deg, rgba(150,64,36,.48), rgba(70,30,20,.55));
+}
+.tray-month-card small { color: #e3ab95; }
+.tray-info-icon.hot { background: linear-gradient(180deg, #ff9a6b, #f0562a); color: #fff; box-shadow: 0 0 14px rgba(255,110,60,.6); }
+.tray-info-icon.hot svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tray-meter { position: absolute; left: 11px; right: 11px; bottom: 6px; height: 3px; border-radius: 99px; background: rgba(255,255,255,.08); }
+.tray-meter b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff7a45, #ffb27a); box-shadow: 0 0 8px rgba(255,120,70,.8); }
+
+.tray-panel footer { align-items: center; margin-top: 12px; font-size: 10.5px; }
+.tray-panel footer button { color: #6f7789; font-size: 10.5px; }
+.tray-panel footer .tray-footer-link { color: #9aa1b2; }
 
 .tray-edit-panel { color: #e8ecf3; }
 .tray-edit-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }

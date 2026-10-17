@@ -8,6 +8,7 @@ enum BridgeContract {
         case httpRequest = "http.request"
         case openDashboard = "app.openDashboard"
         case hidePanel = "app.hidePanel"
+        case resizePanel = "app.resizePanel"
         case quit = "app.quit"
         case refresh = "sync.refresh"
         case schedulerState = "scheduler.state"

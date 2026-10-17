@@ -1,14 +1,29 @@
-export const TRAY_CARD_IDS = ["battery", "lock", "temperature", "charger", "tyre"] as const;
+export const TRAY_CARD_IDS = ["battery", "lock", "temperature", "tyre", "charger", "monthPower"] as const;
 export const TRAY_ACTION_IDS = ["refresh", "dashboard", "token", "log", "quit"] as const;
+export const TRAY_EXTRA_IDS = ["schedule", "sections", "swapCount"] as const;
 
 export type TrayCardId = (typeof TRAY_CARD_IDS)[number];
 export type TrayActionId = (typeof TRAY_ACTION_IDS)[number];
+export type TrayExtraId = (typeof TRAY_EXTRA_IDS)[number];
+export type TraySection = "vehicle" | "charging";
+
+export const TRAY_CARD_SECTION: Record<TrayCardId, TraySection> = {
+  battery: "vehicle",
+  lock: "vehicle",
+  temperature: "vehicle",
+  tyre: "vehicle",
+  charger: "charging",
+  monthPower: "charging",
+};
+
+export const TRAY_WIDE_CARDS: ReadonlySet<TrayCardId> = new Set(["battery", "monthPower"]);
 
 export interface TrayLayout {
   title: string;
   cardOrder: TrayCardId[];
   hiddenCards: TrayCardId[];
   hiddenActions: TrayActionId[];
+  hiddenExtras: TrayExtraId[];
 }
 
 export const DEFAULT_TRAY_LAYOUT: TrayLayout = {
@@ -16,7 +31,25 @@ export const DEFAULT_TRAY_LAYOUT: TrayLayout = {
   cardOrder: [...TRAY_CARD_IDS],
   hiddenCards: [],
   hiddenActions: [],
+  hiddenExtras: [],
 };
+
+/** 半宽卡片落单时撑满整行，避免右侧留空。 */
+export function wideCards(cards: TrayCardId[]): Set<TrayCardId> {
+  const wide = new Set<TrayCardId>();
+  let halfInRow = 0;
+  cards.forEach((id, index) => {
+    if (TRAY_WIDE_CARDS.has(id)) {
+      wide.add(id);
+      halfInRow = 0;
+      return;
+    }
+    halfInRow += 1;
+    const next = cards[index + 1];
+    if (halfInRow % 2 === 1 && (next == null || TRAY_WIDE_CARDS.has(next))) wide.add(id);
+  });
+  return wide;
+}
 
 function validIds<T extends string>(raw: unknown, allowed: readonly T[]): T[] {
   if (!Array.isArray(raw)) return [];
@@ -36,6 +69,7 @@ export function normalizeTrayLayout(raw: unknown): TrayLayout {
     cardOrder: [...savedOrder, ...missing],
     hiddenCards: validIds(source.hiddenCards, TRAY_CARD_IDS),
     hiddenActions: validIds(source.hiddenActions, TRAY_ACTION_IDS),
+    hiddenExtras: validIds(source.hiddenExtras, TRAY_EXTRA_IDS),
   };
 }
 

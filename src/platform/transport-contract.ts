@@ -29,6 +29,10 @@ export interface NativeOperationMap {
     request: Record<string, never>;
     response: null;
   };
+  "app.resizePanel": {
+    request: { height: number };
+    response: null;
+  };
   "app.quit": {
     request: Record<string, never>;
     response: null;

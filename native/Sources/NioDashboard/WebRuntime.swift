@@ -5,6 +5,7 @@
 protocol NativeUICommandHandling: AnyObject {
     func openDashboard(route: String?)
     func hideCompactPanel()
+    func resizeCompactPanel(height: Double)
     func terminateApplication()
 }
 
@@ -109,6 +110,12 @@ final class BridgeMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
                 return (BridgeResponse.success(id: request.id).foundationValue, nil)
             case .hidePanel:
                 commandHandler?.hideCompactPanel()
+                return (BridgeResponse.success(id: request.id).foundationValue, nil)
+            case .resizePanel:
+                guard let height = request.payload.object?["height"]?.number, height.isFinite else {
+                    return (BridgeResponse.failure(id: request.id, code: "invalid_payload", message: "height 无效").foundationValue, nil)
+                }
+                commandHandler?.resizeCompactPanel(height: height)
                 return (BridgeResponse.success(id: request.id).foundationValue, nil)
             case .quit:
                 commandHandler?.terminateApplication()

@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
-import { fetchChangeData, fetchPowerData, fetchVehicleData, loadFetchMeta } from "../lib/storage";
+import { fetchChangeData, fetchPowerData, fetchVehicleData, loadChangeFetchMeta, loadFetchMeta, type FetchMeta } from "../lib/storage";
 import {
   DEFAULT_TRAY_LAYOUT,
   TRAY_ACTION_IDS,
+  TRAY_CARD_SECTION,
+  TRAY_EXTRA_IDS,
   loadTrayLayout,
   moveTrayCard,
   saveTrayLayout,
+  wideCards,
   type TrayActionId,
   type TrayCardId,
+  type TrayExtraId,
   type TrayLayout,
+  type TraySection,
 } from "../lib/tray-layout";
 import { extractVehicleStatus, statusFlagOn } from "../lib/vehicle";
 import { sortedMonthKeys, workStateLabel, type PowerFile } from "../lib/power";
+import { analyzeServiceOrders } from "../lib/change";
+import { fetchEnvConfig } from "../lib/env-config";
+import { changeScheduleLabel, monthPowerSummary, vehicleScheduleLabel, type MonthPowerSummary } from "../lib/tray-extras";
 import { subscribeNativeEvent } from "../platform/native-events";
 import { appTransport } from "../platform/transport";
 import type { NativeRoute } from "../platform/transport-contract";
@@ -31,7 +39,12 @@ interface TraySnapshot {
   hasPower: boolean;
   powerState: string;
   monthPower: string | null;
-  updatedAt: number | null;
+  monthSummary: MonthPowerSummary | null;
+  vehicleSchedule: string;
+  changeSchedule: string;
+  vehicleFetch: FetchMeta | null;
+  changeFetch: FetchMeta | null;
+  swapCount: number | null;
 }
 
 const EMPTY: TraySnapshot = {
@@ -47,16 +60,41 @@ const EMPTY: TraySnapshot = {
   hasPower: false,
   powerState: "暂无家充数据",
   monthPower: null,
-  updatedAt: null,
+  monthSummary: null,
+  vehicleSchedule: vehicleScheduleLabel(undefined, null, new Date().getHours()),
+  changeSchedule: changeScheduleLabel(undefined),
+  vehicleFetch: null,
+  changeFetch: null,
+  swapCount: null,
 };
 
 const CARD_LABELS: Record<TrayCardId, string> = {
   battery: "电池",
   lock: "车锁",
   temperature: "温度",
-  charger: "家充桩",
   tyre: "胎压",
+  charger: "家充桩",
+  monthPower: "本月家充（有家充数据时显示）",
 };
+
+const EXTRA_LABELS: Record<TrayExtraId, string> = {
+  schedule: "拉取频率标签",
+  sections: "分区标题",
+  swapCount: "底部换电次数",
+};
+
+const SECTION_TITLES: Record<TraySection, string> = {
+  vehicle: "车 况",
+  charging: "充 电",
+};
+
+function fetchStatus(label: string, meta: FetchMeta | null): string {
+  if (!meta) return `${label} 尚未同步`;
+  const date = new Date(meta.at);
+  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const today = date.toDateString() === new Date().toDateString();
+  return `${label} ${meta.ok ? "✓" : "✕"} ${today ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`}`;
+}
 
 const ACTION_LABELS: Record<TrayActionId, string> = {
   refresh: "刷新",
@@ -93,6 +131,24 @@ function hasPowerDetails(power: PowerFile | null): power is PowerFile {
   );
 }
 
+/** 让原生面板高度跟随内容，超出屏幕时由原生侧封顶、网页内滚动。 */
+function useNativePanelHeight() {
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!node || appTransport.kind !== "wkwebview") return;
+    let reported = 0;
+    const observer = new ResizeObserver(() => {
+      const height = Math.ceil(node.getBoundingClientRect().height);
+      if (height === reported) return;
+      reported = height;
+      void appTransport.call("app.resizePanel", { height }).catch(() => undefined);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return setNode;
+}
+
 function NioMark() {
   return (
     <svg viewBox="0 0 200 188" aria-hidden="true">
@@ -110,13 +166,16 @@ export function CompactTrayPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "vehicle" | "charging">("all");
   const [draggedCard, setDraggedCard] = useState<TrayCardId | null>(null);
+  const panelRef = useNativePanelHeight();
 
   const load = useCallback(async () => {
-    const [vehicleResult, power, change, meta] = await Promise.all([
+    const [vehicleResult, power, change, meta, changeMeta, config] = await Promise.all([
       fetchVehicleData().catch(() => null),
       fetchPowerData().catch(() => null),
       fetchChangeData().catch(() => null),
       loadFetchMeta().catch(() => null),
+      loadChangeFetchMeta().catch(() => null),
+      fetchEnvConfig().catch(() => null),
     ]);
     const status = vehicleResult ? extractVehicleStatus(vehicleResult.data) : null;
     const tyre = tyreSummary(status?.tyre_status);
@@ -138,7 +197,12 @@ export function CompactTrayPanel() {
         ? validPower.realtime?.effective_state_desc ?? workStateLabel(validPower.spot?.work_state)
         : EMPTY.powerState,
       monthPower: month ? `${month.total_real_charge_kwh.toFixed(1)} kWh` : null,
-      updatedAt: meta?.at ?? null,
+      monthSummary: monthPowerSummary(validPower),
+      vehicleSchedule: vehicleScheduleLabel(config?.vehicle, status?.exterior_status.vehicle_state ?? null, new Date().getHours()),
+      changeSchedule: changeScheduleLabel(config?.change),
+      vehicleFetch: meta,
+      changeFetch: changeMeta,
+      swapCount: change?.resultData?.data ? analyzeServiceOrders(change).swapCompleted : null,
     });
   }, []);
 
@@ -201,6 +265,15 @@ export function CompactTrayPanel() {
     }));
   };
 
+  const toggleExtra = (id: TrayExtraId) => {
+    setDraft((current) => ({
+      ...current,
+      hiddenExtras: current.hiddenExtras.includes(id)
+        ? current.hiddenExtras.filter((value) => value !== id)
+        : [...current.hiddenExtras, id],
+    }));
+  };
+
   const dropCard = (event: DragEvent, target: TrayCardId) => {
     event.preventDefault();
     if (!draggedCard) return;
@@ -219,16 +292,21 @@ export function CompactTrayPanel() {
   const visibleCards = useMemo(() => layout.cardOrder.filter((id) => {
     if (layout.hiddenCards.includes(id)) return false;
     if (id === "charger" && !snapshot.hasPower) return false;
-    if (activeTab === "vehicle") return id !== "charger";
-    if (activeTab === "charging") return id === "charger";
-    return true;
-  }), [activeTab, layout, snapshot.hasPower]);
+    if (id === "monthPower" && !snapshot.monthSummary) return false;
+    if (activeTab === "all") return true;
+    return TRAY_CARD_SECTION[id] === activeTab;
+  }), [activeTab, layout, snapshot.hasPower, snapshot.monthSummary]);
 
-  const updated = snapshot.updatedAt
-    ? new Date(snapshot.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-    : "尚未同步";
+  const showExtra = (id: TrayExtraId) => !layout.hiddenExtras.includes(id);
 
-  const renderCard = (id: TrayCardId) => {
+  const cardGroups: { section: TraySection | null; cards: TrayCardId[] }[] = showExtra("sections")
+    ? (["vehicle", "charging"] as const)
+      .map((section) => ({ section, cards: visibleCards.filter((id) => TRAY_CARD_SECTION[id] === section) }))
+      .filter((group) => group.cards.length > 0)
+    : [{ section: null, cards: visibleCards }];
+
+  const renderCard = (id: TrayCardId, wide: boolean) => {
+    const span = wide ? " tray-card-wide" : "";
     switch (id) {
       case "battery":
         return (
@@ -241,30 +319,40 @@ export function CompactTrayPanel() {
         );
       case "lock":
         return (
-          <article className="tray-info-card" key={id}>
+          <article className={`tray-info-card${span}`} key={id}>
             <span className="tray-info-icon"><IconLock /></span>
             <span className="tray-info-copy"><strong>车锁</strong><small>{snapshot.locked == null ? "状态未知" : snapshot.locked ? "已上锁 · 车门全关" : "未上锁 · 请确认"}</small></span>
           </article>
         );
       case "temperature":
         return (
-          <article className="tray-info-card" key={id}>
+          <article className={`tray-info-card${span}`} key={id}>
             <span className="tray-info-icon"><IconTemp /></span>
             <span className="tray-info-copy"><strong>{snapshot.insideTemperature == null ? "—" : `${snapshot.insideTemperature.toFixed(1)}°`}</strong><small>车内 · 车外 {snapshot.outsideTemperature == null ? "—" : `${snapshot.outsideTemperature.toFixed(1)}°`}</small></span>
           </article>
         );
       case "charger":
         return (
-          <article className="tray-info-card tray-charger-card" key={id}>
+          <article className={`tray-info-card tray-charger-card${span}`} key={id}>
             <span className="tray-info-icon amber"><IconPlug /></span>
             <span className="tray-info-copy"><strong>家充桩</strong><small>{snapshot.powerState}{snapshot.monthPower ? ` · 本月 ${snapshot.monthPower}` : ""}</small></span>
           </article>
         );
       case "tyre":
         return (
-          <article className="tray-info-card" key={id}>
+          <article className={`tray-info-card${span}`} key={id}>
             <span className="tray-info-icon"><IconTyre /></span>
             <span className="tray-info-copy"><strong>胎压</strong><small>{snapshot.tyreDetail} · {snapshot.tyre}</small></span>
+          </article>
+        );
+      case "monthPower":
+        return snapshot.monthSummary && (
+          <article className="tray-info-card tray-month-card" key={id}>
+            <span className="tray-info-icon hot">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z" /></svg>
+            </span>
+            <span className="tray-info-copy"><strong>{snapshot.monthSummary.title}</strong><small>{snapshot.monthSummary.detail}</small></span>
+            <span className="tray-meter"><b style={{ width: `${Math.round(snapshot.monthSummary.ratio * 100)}%` }} /></span>
           </article>
         );
     }
@@ -272,7 +360,7 @@ export function CompactTrayPanel() {
 
   if (editing) {
     return (
-      <main className="tray-panel tray-edit-panel">
+      <main className="tray-panel tray-edit-panel" ref={panelRef}>
         <header className="tray-edit-header">
           <div><strong>编辑小面板</strong><small>拖动卡片调整顺序</small></div>
           <button type="button" onClick={toggleEdit}>取消</button>
@@ -309,6 +397,17 @@ export function CompactTrayPanel() {
             ))}
           </div>
         </section>
+        <section className="tray-edit-section">
+          <h2>其他元素</h2>
+          <div className="tray-edit-actions">
+            {TRAY_EXTRA_IDS.map((id) => (
+              <label key={id}>
+                <input type="checkbox" checked={!draft.hiddenExtras.includes(id)} onChange={() => toggleExtra(id)} />
+                {EXTRA_LABELS[id]}
+              </label>
+            ))}
+          </div>
+        </section>
         <div className="tray-edit-footer">
           <button type="button" onClick={() => setDraft(DEFAULT_TRAY_LAYOUT)}>恢复默认</button>
           <button className="primary" type="button" onClick={() => void saveEditing()}>保存布局</button>
@@ -318,7 +417,7 @@ export function CompactTrayPanel() {
   }
 
   return (
-    <main className="tray-panel">
+    <main className="tray-panel" ref={panelRef}>
       <header className="tray-header">
         <button className="tray-vehicle-title" type="button" onClick={() => open("dashboard")}>
           <span className="tray-app-icon"><NioMark /></span>
@@ -356,15 +455,36 @@ export function CompactTrayPanel() {
 
       <section className="tray-summary">
         <strong>{activeTab === "charging" ? "充电" : "整车"}</strong>
-        <span>{visibleCards.length} 项状态</span>
+        <span>· {visibleCards.length} 项状态</span>
+        {showExtra("schedule") && (
+          <span className="tray-schedule">
+            <em>{snapshot.vehicleSchedule}</em>
+            <em>{snapshot.changeSchedule}</em>
+          </span>
+        )}
       </section>
 
-      <section className="tray-info-grid">
-        {visibleCards.map(renderCard)}
-        {activeTab === "charging" && visibleCards.length === 0 && <p className="tray-empty">暂无家充数据</p>}
-      </section>
+      {cardGroups.map(({ section, cards }) => {
+        const wide = wideCards(cards);
+        return (
+          <div key={section ?? "all"}>
+            {section && cards.length > 0 && <h3 className="tray-section-title">{SECTION_TITLES[section]}</h3>}
+            <section className="tray-info-grid">
+              {cards.map((id) => renderCard(id, wide.has(id)))}
+            </section>
+          </div>
+        );
+      })}
+      {activeTab === "charging" && visibleCards.length === 0 && <p className="tray-empty">暂无家充数据</p>}
 
-      <footer><span>车况 ✓ {updated}</span><button type="button" onClick={() => open("settings/log")}>查看诊断</button></footer>
+      <footer>
+        <button type="button" onClick={() => open("settings/log")}>
+          {fetchStatus("车辆", snapshot.vehicleFetch)} · {fetchStatus("换电", snapshot.changeFetch)}
+        </button>
+        {showExtra("swapCount") && snapshot.swapCount != null
+          ? <button className="tray-footer-link" type="button" onClick={() => open("dashboard")}>换电 {snapshot.swapCount} 次 ›</button>
+          : <button className="tray-footer-link" type="button" onClick={() => open("settings/log")}>查看诊断 ›</button>}
+      </footer>
     </main>
   );
 }

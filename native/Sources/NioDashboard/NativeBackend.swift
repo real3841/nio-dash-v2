@@ -82,7 +82,7 @@ final class NativeBackend: @unchecked Sendable {
                         .string("stock.updated"),
                     ]),
                 ]))
-            case .openDashboard, .hidePanel, .quit:
+            case .openDashboard, .hidePanel, .resizePanel, .quit:
                 return .failure(id: request.id, code: "ui_operation", message: "界面命令应由应用壳处理")
             }
         } catch {
