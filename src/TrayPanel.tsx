@@ -110,9 +110,9 @@ export function TrayPanel() {
       <header className="tray-header">
         <button className="tray-vehicle-title" type="button" onClick={() => open("dashboard")}>
           <span className="tray-app-icon" aria-hidden="true">
-            <svg viewBox="0 0 64 64">
-              <path d="M7 31C10 15 20 6 32 6s22 9 25 25C49 23 41 18 32 18S15 23 7 31Z" />
-              <path d="M7 37c6 2 13 7 20 16V37H7Zm50 0H37v16c7-9 14-14 20-16Z" />
+            <svg viewBox="0 0 200 188">
+              <path d="M141.76 83.54c1.62 3.96 1.94 5.73 3.4 8.83 1.2 2.51 2.59 4.37 4.47 5.74 3.85 2.8 8.73 2.9 14.62 2.9H200c0-26.79-10.53-52.48-29.29-71.42C151.96 10.64 126.52 0 100 0S48.04 10.64 29.29 29.59C10.53 48.53 0 74.22 0 101.01h35.75c5.89 0 10.76-.1 14.62-2.9 1.88-1.37 3.27-3.23 4.47-5.74 1.46-3.1 1.78-4.87 3.4-8.83 7-17.06 23.48-28.18 41.76-28.18s34.76 11.12 41.76 28.18Z" />
+              <path d="m152.53 187.88-40.08-40.89c-4.73-4.83-7.95-7.82-11.94-7.82-4 0-7.22 2.99-11.95 7.82l-40.08 40.89a101.2 101.2 0 0 1-37.37-41.67l35.53-36.25c3.54-3.61 6.06-6.08 9.75-7.5 3.66-1.41 7.63-1.45 13.35-1.45h61.54c5.72 0 9.69.04 13.35 1.45 3.69 1.42 6.21 3.89 9.74 7.5l35.54 36.25a101.3 101.3 0 0 1-37.38 41.67Z" />
             </svg>
           </span>
           <span>
@@ -138,22 +138,37 @@ export function TrayPanel() {
       </header>
 
       <button className="tray-car-scene" type="button" onClick={() => open("dashboard")} aria-label="打开完整看板">
-        <span className="tray-road-line left" />
-        <span className="tray-road-line right" />
-        <svg className="tray-car-graphic" viewBox="0 0 180 280" aria-hidden="true">
+        <svg className="tray-car-graphic" viewBox="0 0 340 155" aria-hidden="true">
           <defs>
-            <linearGradient id="tray-car-body" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#586273" />
-              <stop offset="1" stopColor="#1b202a" />
+            <linearGradient id="tray-car-body" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#f4f6fa" />
+              <stop offset=".55" stopColor="#dce1e9" />
+              <stop offset="1" stopColor="#b7bec9" />
+            </linearGradient>
+            <linearGradient id="tray-glass" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#6f88ad" />
+              <stop offset=".5" stopColor="#b7c6dc" />
+              <stop offset="1" stopColor="#6f88ad" />
             </linearGradient>
           </defs>
-          <ellipse cx="90" cy="145" rx="65" ry="118" fill="rgba(0,0,0,.44)" />
-          <rect x="42" y="18" width="96" height="242" rx="42" fill="url(#tray-car-body)" stroke="rgba(255,255,255,.22)" />
-          <path d="M58 74 Q90 48 122 74 L116 121 H64 Z" fill="#17243a" />
-          <path d="M64 158 H116 L123 215 Q90 235 57 215 Z" fill="#17212f" />
-          <rect x="60" y="125" width="60" height="30" rx="10" fill="#252b35" />
-          <path d="M50 42 Q90 23 130 42" stroke="#e7f1ff" strokeWidth="4" strokeLinecap="round" />
-          <path d="M52 238 Q90 252 128 238" stroke="#ff6a5f" strokeWidth="4" strokeLinecap="round" />
+          <ellipse cx="171" cy="83" rx="145" ry="63" fill="rgba(0,0,0,.35)" />
+          <rect x="68" y="8" width="43" height="22" rx="8" fill="#171d27" />
+          <rect x="229" y="8" width="43" height="22" rx="8" fill="#171d27" />
+          <rect x="68" y="125" width="43" height="22" rx="8" fill="#171d27" />
+          <rect x="229" y="125" width="43" height="22" rx="8" fill="#171d27" />
+          <path d="M42 77c0-33 30-55 71-58 38-3 76-3 114 0 41 3 71 25 71 58s-30 55-71 58c-38 3-76 3-114 0-41-3-71-25-71-58Z" fill="url(#tray-car-body)" stroke="#f9fbff" strokeWidth="2" />
+          <path d="M66 77c0-25 19-41 48-45l9 90c-34-3-57-19-57-45Zm208 0c0-25-19-41-48-45l-9 90c34-3 57-19 57-45Z" fill="none" stroke="#aeb7c5" strokeDasharray="4 5" opacity=".55" />
+          <path d="M126 32h88l13 24v42l-13 24h-88l-13-24V56l13-24Z" fill="url(#tray-glass)" />
+          <rect x="138" y="39" width="64" height="76" rx="22" fill="#dfe5ee" stroke="#b5bfce" />
+          <path d="M142 77h56" stroke="#aab4c2" strokeWidth="7" strokeLinecap="round" />
+          <path d="M151 77h38" stroke="#27c36a" strokeWidth="7" strokeLinecap="round" />
+          <rect x="130" y="18" width="40" height="12" rx="6" fill="#e7ebf1" stroke="#c3cad4" />
+          <rect x="173" y="18" width="40" height="12" rx="6" fill="#e7ebf1" stroke="#c3cad4" />
+          <rect x="130" y="125" width="40" height="12" rx="6" fill="#f5f6f8" stroke="#c3cad4" />
+          <rect x="173" y="125" width="40" height="12" rx="6" fill="#f5f6f8" stroke="#c3cad4" />
+          <path d="M50 49c-6 8-9 17-9 28m9 29c-6-8-9-17-9-28" fill="none" stroke="#8ba0bd" strokeWidth="5" strokeLinecap="round" />
+          <path d="M291 46c5 9 8 19 8 31m-8 31c5-9 8-19 8-31" fill="none" stroke="#d7dde7" strokeWidth="4" strokeLinecap="round" />
+          <circle cx="236" cy="117" r="9" fill="none" stroke="#ff9e00" strokeWidth="3" />
         </svg>
         <span className="tray-car-badge">
           {snapshot.locked == null ? "状态未知" : snapshot.locked ? "已上锁" : "未上锁"} · {snapshot.tyre}

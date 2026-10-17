@@ -54,7 +54,7 @@ button { color: inherit; font: inherit; }
   border-radius: 11px;
   background: rgba(255,255,255,.07);
 }
-.tray-app-icon svg { width: 25px; height: 25px; fill: #f5f7fb; }
+.tray-app-icon svg { width: 23px; height: 22px; fill: #f5f7fb; }
 .tray-vehicle-title strong { display: block; font-size: 15px; font-weight: 650; }
 .tray-vehicle-title small {
   display: block;
@@ -100,7 +100,7 @@ button { color: inherit; font: inherit; }
   position: relative;
   display: block;
   width: calc(100% + 32px);
-  height: 245px;
+  height: 175px;
   margin: 4px -16px 0;
   padding: 0;
   overflow: hidden;
@@ -109,7 +109,7 @@ button { color: inherit; font: inherit; }
 }
 .tray-car-scene::before {
   position: absolute;
-  inset: 25px 30px 12px;
+  inset: 8px 18px 13px;
   border-radius: 50%;
   background: radial-gradient(closest-side, rgba(255,190,120,.15), transparent);
   content: "";
@@ -117,22 +117,13 @@ button { color: inherit; font: inherit; }
 }
 .tray-car-scene .tray-car-graphic {
   position: relative;
-  width: 155px;
-  height: 225px;
-  transform: rotate(90deg);
-  filter: drop-shadow(14px 0 18px rgba(0,0,0,.48));
+  width: 330px;
+  height: 150px;
+  filter: drop-shadow(0 12px 14px rgba(0,0,0,.42));
 }
-.tray-road-line {
-  position: absolute;
-  top: 30px;
-  bottom: 20px;
-  border-left: 1px dashed rgba(255,255,255,.09);
-}
-.tray-road-line.left { left: 72px; }
-.tray-road-line.right { right: 72px; }
 .tray-car-badge {
   position: absolute;
-  bottom: 7px;
+  bottom: 2px;
   left: 50%;
   padding: 4px 11px;
   transform: translateX(-50%);

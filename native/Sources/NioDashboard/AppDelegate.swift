@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         let root = resolveWebRoot()
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 390, height: 520),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
