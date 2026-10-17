@@ -144,6 +144,23 @@ final class NativeBackend: @unchecked Sendable {
             }
             try await storage.writeRootData(body, filename: "card-layout.json")
             return try .json(.object(["ok": .bool(true)]))
+        case ("/api/tray-layout", "GET"):
+            let value: JSONValue
+            if let data = try? await storage.readRootData(filename: "tray-layout.json"),
+               let object = try? JSONSerialization.jsonObject(with: data) {
+                value = JSONValue(object)
+            } else {
+                value = .object([:])
+            }
+            return try .json(value)
+        case ("/api/tray-layout", "PUT"):
+            guard let body = request.body,
+                  let object = try? JSONSerialization.jsonObject(with: body),
+                  object is [String: Any] else {
+                return try .json(.object(["ok": .bool(false), "error": .string("invalid_body")]), status: 400)
+            }
+            try await storage.writeRootData(body, filename: "tray-layout.json")
+            return try .json(.object(["ok": .bool(true)]))
         case ("/api/fetch-log", "GET"), ("/fetch-log", "GET"):
             let entries = (try? await storage.readJSON(relativePath: "fetch-log.json")) ?? .array([])
             return try .json(.object([
