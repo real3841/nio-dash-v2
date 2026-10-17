@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.animationBehavior = .utilityWindow
         let compactSurface = WebSurface(
             entry: "tray",
@@ -114,6 +114,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
         )
         compactSurface.webView.autoresizingMask = [.width, .height]
         compactSurface.webView.frame = panel.contentView?.bounds ?? .zero
+        compactSurface.webView.wantsLayer = true
+        compactSurface.webView.layer?.cornerRadius = 24
+        compactSurface.webView.layer?.masksToBounds = true
         panel.contentView = compactSurface.webView
         compactSurface.webView.addTrackingArea(NSTrackingArea(
             rect: .zero,
