@@ -557,7 +557,8 @@ actor SyncCoordinator {
             method: "GET",
             token: nil,
             body: nil,
-            extraHeaders: env["NIO_STOCK_COOKIE"].map { ["Cookie": $0] } ?? [:]
+            extraHeaders: first(env, ["NIO_STOCK_COOKIE", "NIO_STOCK_WATCH_COOKIE"])
+                .map { ["Cookie": $0] } ?? [:]
         )
         try await storage.writeJSON(payload, relativePath: "stock-watch-state.json")
         try await writeMeta("last-fetch-stock.json", ok: true)

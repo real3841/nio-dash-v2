@@ -98,6 +98,8 @@ actor AppStorage {
         "NIO_AMAP_JS_SECURITY_CODE",
         "NIO_STOCK_COOKIE",
         "NIO_STOCK_TOKEN",
+        "NIO_STOCK_WATCH_COOKIE",
+        "NIO_STOCK_WATCH_TOKEN",
         "NIO_POWER_ACCESS_TOKEN",
     ]
 
