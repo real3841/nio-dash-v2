@@ -24,23 +24,23 @@ export function TrayVehicleScene({ hasCharger, locked, tyre }: Props) {
             <stop offset="1" stopColor="#ffbd67" stopOpacity="0" />
           </radialGradient>
         </defs>
-        <ellipse cx="171" cy="83" rx="145" ry="63" fill="rgba(0,0,0,.38)" />
+        <ellipse cx="172" cy="80" rx="150" ry="62" fill="rgba(0,0,0,.38)" />
         <rect x="68" y="8" width="43" height="22" rx="7" fill="#080d13" stroke="#185f53" />
         <rect x="229" y="8" width="43" height="22" rx="7" fill="#080d13" stroke="#185f53" />
         <rect x="68" y="125" width="43" height="22" rx="7" fill="#080d13" stroke="#185f53" />
         <rect x="229" y="125" width="43" height="22" rx="7" fill="#080d13" stroke="#185f53" />
-        <path d="M42 77c0-33 30-55 71-58 38-3 76-3 114 0 41 3 71 25 71 58s-30 55-71 58c-38 3-76 3-114 0-41-3-71-25-71-58Z" fill="url(#tray-car-body)" stroke="#4a5567" strokeWidth="2" />
-        <path d="M66 77c0-25 19-41 48-45l9 90c-34-3-57-19-57-45Zm208 0c0-25-19-41-48-45l-9 90c34-3 57-19 57-45Z" fill="none" stroke="#596578" strokeDasharray="4 5" opacity=".55" />
-        <path d="M126 32h88l13 24v42l-13 24h-88l-13-24V56l13-24Z" fill="url(#tray-glass)" />
-        <rect x="138" y="39" width="64" height="76" rx="17" fill="#17202e" stroke="#394456" />
-        <path d="M143 77h54" stroke="#445065" strokeWidth="6" strokeLinecap="round" />
-        <path d="M151 77h38" stroke="#2ac86d" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="170" cy="96" r="9" fill="#bd9160" opacity=".7" />
-        <circle cx="170" cy="96" r="3" fill="#ffd394" />
-        <path d="M44 49 10 77l34 28Z" fill="rgba(224,232,247,.12)" />
-        <path d="M50 49c-6 8-9 17-9 28m9 29c-6-8-9-17-9-28" fill="none" stroke="#e4edf9" strokeWidth="4" strokeLinecap="round" />
-        <path d="M291 46c5 9 8 19 8 31m-8 31c5-9 8-19 8-31" fill="none" stroke="#ed5367" strokeWidth="4" strokeLinecap="round" />
-        <circle cx="236" cy="117" r="8" fill="none" stroke="#ff9e00" strokeWidth="2.5" />
+        <path d="M44 77 4 46v62Z" fill="rgba(224,232,247,.14)" />
+        <rect x="160" y="16" width="10" height="8" rx="2" fill="#2b3442" />
+        <rect x="160" y="130" width="10" height="8" rx="2" fill="#2b3442" />
+        <path d="M76 22H272Q300 22 302 50V104Q300 132 272 132H76Q46 130 43 100V54Q46 24 76 22Z" fill="url(#tray-car-body)" stroke="#4a5567" strokeWidth="2" />
+        <path d="M112 30H240Q256 30 258 46V108Q256 124 240 124H112Q98 124 96 108V46Q98 30 112 30Z" fill="url(#tray-glass)" />
+        <rect x="136" y="38" width="86" height="78" rx="12" fill="#17202e" stroke="#394456" />
+        <path d="M150 64h58" stroke="#445065" strokeWidth="5" strokeLinecap="round" />
+        <path d="M160 64h44" stroke="#2ac86d" strokeWidth="5" strokeLinecap="round" />
+        <circle cx="179" cy="90" r="9" fill="#bd9160" opacity=".55" />
+        <circle cx="179" cy="90" r="3.5" fill="#ffd394" />
+        <path d="M49 46Q42 77 49 108" fill="none" stroke="#e4edf9" strokeWidth="4" strokeLinecap="round" strokeDasharray="10 5" />
+        <path d="M297 50Q303 77 297 104" fill="none" stroke="#ed5367" strokeWidth="4" strokeLinecap="round" />
         {hasCharger && (
           <g>
             <ellipse cx="389" cy="77" rx="48" ry="66" fill="url(#charger-glow)" />
