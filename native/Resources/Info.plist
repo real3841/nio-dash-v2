@@ -8,6 +8,8 @@
   <string>蔚来车辆看板</string>
   <key>CFBundleExecutable</key>
   <string>NioDashboard</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.nio.vehicle-dashboard.native</string>
   <key>CFBundleInfoDictionaryVersion</key>

@@ -25,6 +25,10 @@ cp "$BIN_DIR/NioDashboard" "$CONTENTS_DIR/MacOS/NioDashboard"
 cp "$NATIVE_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$SHORT_VERSION" "$CONTENTS_DIR/Info.plist"
 cp "$NATIVE_DIR/Resources/PrivacyInfo.xcprivacy" "$CONTENTS_DIR/Resources/PrivacyInfo.xcprivacy"
+ICONSET_DIR=$(mktemp -d)/AppIcon.iconset
+swift "$SCRIPT_DIR/make-icon.swift" "$NATIVE_DIR/Resources/AppIcon.svg" "$ICONSET_DIR"
+iconutil -c icns "$ICONSET_DIR" -o "$CONTENTS_DIR/Resources/AppIcon.icns"
+rm -rf "${ICONSET_DIR:h}"
 cp -R "$ROOT_DIR/dist/." "$CONTENTS_DIR/Resources/web/"
 
 IDENTITY=${CODESIGN_IDENTITY:--}
