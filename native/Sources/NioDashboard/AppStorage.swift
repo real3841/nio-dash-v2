@@ -86,6 +86,7 @@ struct EnvironmentFile: Sendable {
 }
 
 actor AppStorage {
+    private static let secretStorageKey = "NIO_SECRET_STORAGE"
     static let secretKeys: Set<String> = [
         "NIO_VEHICLE_ACCESS_TOKEN",
         "NIO_ACCESS_TOKEN",
@@ -141,6 +142,7 @@ actor AppStorage {
         }
         let defaults = """
         # 蔚来看板 Mac 原生版配置
+        NIO_SECRET_STORAGE=file
         NIO_VEHICLE_API_URL=
         NIO_CHANGE_API_URL=
         NIO_CHECKIN_API_URL=
@@ -156,47 +158,44 @@ actor AppStorage {
     func environment(includingSecrets: Bool = false, keychain: KeychainStore? = nil) throws -> [String: String] {
         let contents = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         var values = EnvironmentFile(contents: contents).values
-        guard includingSecrets, let keychain else {
+        guard includingSecrets else {
             for key in Self.secretKeys {
                 values.removeValue(forKey: key)
             }
             return values
         }
-        for key in Self.secretKeys {
-            if let value = try keychain.read(key), !value.isEmpty {
-                values[key] = value
-            }
-        }
         return values
     }
 
     func updateEnvironment(_ changes: [String: String]) throws {
-        let safeChanges = changes.filter { !Self.secretKeys.contains($0.key) }
         let contents = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-        let next = EnvironmentFile(contents: contents).rendered(replacing: safeChanges)
+        let next = EnvironmentFile(contents: contents).rendered(replacing: changes)
         try atomicWrite(Data(next.utf8), to: configURL)
     }
 
-    func migrateSecrets(to keychain: KeychainStore) throws -> [String] {
+    /// 2.0 早期版本曾将本机配置迁入钥匙串。用户选择恢复 config.env 后，
+    /// 仅首次读取旧值并写回权限为 0600 的本机配置文件。
+    func restoreSecretsFromKeychain(_ keychain: KeychainStore) throws -> [String] {
         let contents = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         let environment = EnvironmentFile(contents: contents)
-        var cleared: [String: String] = [:]
-        var migrated: [String] = []
+        guard environment.values[Self.secretStorageKey] != "file" else { return [] }
+        var restored: [String: String] = [Self.secretStorageKey: "file"]
         for key in Self.secretKeys {
-            guard let value = environment.values[key], !value.isEmpty else { continue }
-            try keychain.write(value, for: key)
-            cleared[key] = ""
-            migrated.append(key)
+            if let existing = environment.values[key], !existing.isEmpty {
+                continue
+            }
+            if let value = try keychain.read(key), !value.isEmpty {
+                restored[key] = value
+            }
         }
-        if !cleared.isEmpty {
-            try atomicWrite(Data(environment.rendered(replacing: cleared).utf8), to: configURL)
-        }
-        return migrated.sorted()
+        try atomicWrite(Data(environment.rendered(replacing: restored).utf8), to: configURL)
+        return restored.keys.filter { Self.secretKeys.contains($0) }.sorted()
     }
 
-    func secretConfigurationState(keychain: KeychainStore) -> [String: Bool] {
-        Dictionary(uniqueKeysWithValues: Self.secretKeys.map { key in
-            (key, ((try? keychain.read(key)) ?? nil)?.isEmpty == false)
+    func secretConfigurationState() -> [String: Bool] {
+        let values = (try? environment(includingSecrets: true)) ?? [:]
+        return Dictionary(uniqueKeysWithValues: Self.secretKeys.map { key in
+            (key, values[key]?.isEmpty == false)
         })
     }
 
@@ -285,6 +284,7 @@ actor AppStorage {
             } else {
                 try fileManager.moveItem(at: temporary, to: destination)
             }
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
         } catch {
             try? fileManager.removeItem(at: temporary)
             throw NativeError.storage("无法写入 \(destination.lastPathComponent)：\(error.localizedDescription)")

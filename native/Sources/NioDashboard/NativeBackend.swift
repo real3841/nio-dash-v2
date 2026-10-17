@@ -25,7 +25,7 @@ final class NativeBackend: @unchecked Sendable {
 
     func bootstrap(enableScheduler: Bool) async throws {
         try await storage.bootstrapConfig()
-        _ = try await storage.migrateSecrets(to: keychain)
+        _ = try await storage.restoreSecretsFromKeychain(keychain)
         await sync.setUpdateHandler { [weak self] target in
             self?.emit("sync.completed", .object([
                 "target": .string(target),
@@ -248,8 +248,8 @@ final class NativeBackend: @unchecked Sendable {
     }
 
     private func configResponse() async throws -> HTTPBridgeResponse {
-        let env = try await storage.environment()
-        let configured = await storage.secretConfigurationState(keychain: keychain)
+        let env = try await storage.environment(includingSecrets: true)
+        let configured = await storage.secretConfigurationState()
         let vehicleKeys = [
             "NIO_VEHICLE_API_URL", "NIO_VEHICLE_USER_AGENT", "NIO_VEHICLE_API_METHOD",
             "NIO_VEHICLE_POLL_DRIVING_SEC", "NIO_VEHICLE_POLL_DAY_SEC", "NIO_VEHICLE_POLL_NIGHT_SEC",
@@ -291,16 +291,14 @@ final class NativeBackend: @unchecked Sendable {
         guard let object = try decodeObject(body) else {
             return try .json(.object(["ok": .bool(false), "error": .string("invalid_body")]), status: 400)
         }
-        var publicChanges: [String: String] = [:]
+        var changes: [String: String] = [:]
         for (key, value) in object {
             guard let text = value as? String else { continue }
-            if AppStorage.secretKeys.contains(key) {
-                if !text.isEmpty { try keychain.write(text, for: key) }
-            } else {
-                publicChanges[key] = text
+            if !AppStorage.secretKeys.contains(key) || !text.isEmpty {
+                changes[key] = text
             }
         }
-        try await storage.updateEnvironment(publicChanges)
+        try await storage.updateEnvironment(changes)
         if section == "vehicle" || section == "change" {
             await scheduler.wake()
         }
@@ -340,7 +338,7 @@ final class NativeBackend: @unchecked Sendable {
         }
         if let token {
             for key in ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_CHANGE_ACCESS_TOKEN", "NIO_VEHICLE_EXTRA_TOKEN"] {
-                try keychain.write(token, for: key)
+                urlUpdates[key] = token
             }
         }
         try await storage.updateEnvironment(urlUpdates)
@@ -398,8 +396,10 @@ final class NativeBackend: @unchecked Sendable {
         guard let object = try decodeObject(body) else {
             return try .json(.object(["ok": .bool(false)]), status: 400)
         }
-        if let value = object["cookie"] as? String, !value.isEmpty { try keychain.write(value, for: "NIO_STOCK_COOKIE") }
-        if let value = object["token"] as? String, !value.isEmpty { try keychain.write(value, for: "NIO_STOCK_TOKEN") }
+        var changes: [String: String] = [:]
+        if let value = object["cookie"] as? String, !value.isEmpty { changes["NIO_STOCK_COOKIE"] = value }
+        if let value = object["token"] as? String, !value.isEmpty { changes["NIO_STOCK_TOKEN"] = value }
+        try await storage.updateEnvironment(changes)
         return try .json(.object(["ok": .bool(true)]))
     }
 
@@ -418,7 +418,8 @@ final class NativeBackend: @unchecked Sendable {
         guard let lat = Double(parameters["lat"] ?? ""), let lng = Double(parameters["lng"] ?? "") else {
             return try .json(.object(["ok": .bool(false), "error": .string("invalid_lat_lng")]), status: 400)
         }
-        guard let key = try keychain.read("NIO_AMAP_WEB_SERVICE_KEY"), !key.isEmpty else {
+        let env = try await storage.environment(includingSecrets: true)
+        guard let key = env["NIO_AMAP_WEB_SERVICE_KEY"], !key.isEmpty else {
             return try .json(.object(["ok": .bool(false), "error": .string("amap_not_configured")]), status: 404)
         }
         var target = URLComponents(string: "https://restapi.amap.com/v3/geocode/regeo")!
@@ -443,8 +444,8 @@ final class NativeBackend: @unchecked Sendable {
     }
 
     private func authSlots() async -> JSONValue {
-        let env = (try? await storage.environment()) ?? [:]
-        let secretState = await storage.secretConfigurationState(keychain: keychain)
+        let env = (try? await storage.environment(includingSecrets: true)) ?? [:]
+        let secretState = await storage.secretConfigurationState()
         let definitions: [(String, String, String, String?, String?)] = [
             ("widget", "车辆状态", "GET", "NIO_VEHICLE_API_URL", "NIO_VEHICLE_ACCESS_TOKEN"),
             ("status", "车况整包", "GET", "NIO_VEHICLE_STATUS_URL", "NIO_VEHICLE_EXTRA_TOKEN"),

@@ -39,6 +39,22 @@ import Testing
     #expect(try await storage.readJSON(relativePath: "sample.json") == .object(["ok": .bool(true)]))
 }
 
+@Test func localConfigStoresSecretsPrivatelyAndHidesThemFromPublicReads() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = try AppStorage(rootURL: root)
+    try await storage.bootstrapConfig()
+    let placeholder = "local-test-value"
+
+    try await storage.updateEnvironment(["NIO_VEHICLE_ACCESS_TOKEN": placeholder])
+
+    #expect(try await storage.environment()["NIO_VEHICLE_ACCESS_TOKEN"] == nil)
+    #expect(try await storage.environment(includingSecrets: true)["NIO_VEHICLE_ACCESS_TOKEN"] == placeholder)
+    let configURL = await storage.configURL
+    let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+}
+
 @Test func photoServiceRejectsOversizedInput() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
