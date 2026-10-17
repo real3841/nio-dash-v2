@@ -1,0 +1,423 @@
+<h1 align="center">NIO-Dash</h1>
+
+<p align="center">
+  蔚来车辆看板 — 原生常驻 macOS 菜单栏，在一个本地应用里查看车况、电量、行程、家充与换电记录。
+</p>
+
+<p align="center">
+  <a href="https://github.com/real3841/nio-dash-v2/releases/latest"><b>下载最新版</b></a>
+  &nbsp;·&nbsp;
+  <a href="#功能概览"><b>功能概览</b></a>
+  &nbsp;·&nbsp;
+  <a href="#开发运行"><b>自行构建</b></a>
+</p>
+
+<p align="center">
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
+  <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
+  <img alt="Native beta" src="https://img.shields.io/badge/native_beta-2.0.0-2563EB">
+  <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
+  <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
+  <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
+</p>
+
+<p align="center">
+  <img src="docs/vehicle-hero.png" alt="蔚来车辆看板车况示意图">
+</p>
+
+## 功能概览
+
+- **原生状态栏面板。** 点击车图标打开紧凑面板，实时查看电量、续航、锁车、轮胎、家充和同步状态。
+- **完整车辆看板。** 卡片支持拖拽、隐藏与恢复，覆盖车门、车窗、轮胎、空调、灯光和软件状态。
+- **五角度拖动车辆。** 使用自己的侧面、前后 45°、正前和正后照片；拖动或方向键切换角度。
+- **行程与趋势。** 按天整理行驶路径、日增里程、电量、总里程与家充趋势。
+- **家充与服务订单。** 展示家充桩状态、月度充电统计，并在本地持续补全换电与服务订单。
+- **自动同步。** 根据行驶、驻车和昼夜状态使用不同拉取间隔，每日签到独立调度。
+- **问题可追踪。** 运行日志区分签名、Token 与网络错误，并提供对应处理入口。
+- **数据留在本机。** 配置与历史记录保存在本机数据目录，不随安装包上传。
+
+## 2.0 原生版
+
+2.0 使用 **Swift / AppKit + WKWebView**，安装包不再携带 Electron、Node 或 localhost HTTP 服务。
+
+- `NSStatusItem` 提供系统状态栏入口，点击打开无边框紧凑面板。
+- 紧凑面板的车辆区域和「看板」打开完整窗口；Token、日志直接定位到对应设置页。
+- Swift actor 负责存储、同步锁、调度和脱敏日志，网络统一使用 `URLSession` 与系统 TLS 校验。
+- React 通过版本化 WK bridge 与原生服务通信；Electron / NAS 仍使用兼容的 HTTP transport。
+- Token、Cookie 与服务密钥迁入 macOS Keychain；React 只读取“已配置”状态，不取回明文。
+- 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
+
+> `v1.10.0` 继续作为稳定版保留。原生版在功能与隐私检查全部通过后以 `v2.0.0-beta.1` 先行发布。
+
+### 车辆看板卡片
+
+电池 · 当日里程 · 最近行程 · 充电详情 · 家充桩 · 车门 · 车窗 · 轮胎 · 软件/GPS · 特殊模式 · 车辆信息 · 行驶/泊车 · 座椅加热 · 连接状态 · 换电券 · 驾享券 · 温度/空调 · 维保 · 灯光 · 钥匙 · 特殊状态 · 行程分享 · 近车控制 · 换电订单 · 低压电瓶 · 设备 · 充电订单 · 远程操作 · 离车换电 · 储物箱 · 冰箱
+
+车况卡片右上角有 `{ }` 按钮，可查看该卡片对应的 RVS 原始 JSON。家充桩卡片里的「站点证书」可点开，查看 `*.nio.com` 证书字段（到期日、签发方、公钥与签名算法）。这是访问家充接口的网站证书，不是充电桩本身的到期日。
+
+### 服务订单卡片（4 张）
+
+订单概览 · 换电统计 · 常用换电站 · 全部订单（可折叠表格）
+
+### 智能拉取
+
+| 数据 | 策略 |
+|------|------|
+| **车辆** | 行驶中不论时段用「行驶中」间隔；驻车/充电等按白天 09:00–17:00 / 夜间 17:01–08:59，均可配置 |
+| **换电** | 独立定时，默认 1 天，可选 12 小时或 6 小时；也可手动刷新。查询会按游标翻到最后一页 |
+| **签到** | 每天 **9:00** 一次；9 点后首次打开补拉；未签到时每 5 分钟重试直至已签 |
+
+## 下载
+
+从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
+`NIO-Dash-<版本>-arm64-mac.zip`，解压后打开 **蔚来车辆看板.app**。
+
+当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
+
+> 首次打开若被 Gatekeeper 拦截：在应用上右键选择 **打开**，再确认一次。
+
+## 快速开始
+
+### 环境要求
+
+- macOS（源码构建支持 Apple Silicon 或 Intel）
+- Node.js 20+
+- npm
+- Swift 6 / Xcode Command Line Tools（构建 2.0 原生版）
+
+### 开发运行
+
+```bash
+git clone https://github.com/real3841/nio-dash-v2.git
+cd nio-dash-v2
+npm install
+npm run electron:dev
+```
+
+首次启动打开 **数据同步**，填入车辆 / 换电 / 签到 API 配置后保存，再点「刷新车辆 / 刷新换电」。
+
+### 打包 Mac 应用（可直接运行）
+
+原生 2.0（Apple Silicon）：
+
+```bash
+npm run native:test
+npm run native:pack
+```
+
+产物位于 `release-native/NIO-Dash-2.0.0-beta.1-arm64.zip`。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+
+原生 DMG：
+
+```bash
+npm run native:pack:dmg
+```
+
+Electron 1.x：
+
+```bash
+npm run electron:pack
+```
+
+产物：
+
+| 路径 | 说明 |
+|------|------|
+| `release/mac-arm64/蔚来车辆看板.app` | 双击即可运行 |
+
+DMG 安装镜像：
+
+```bash
+npm run electron:pack:dmg
+```
+
+> 首次打开若被 Gatekeeper 拦截：在 `.app` 上 **右键 → 打开**。
+
+### 仅 Web / API 开发（无 Electron）
+
+```bash
+npm install
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env
+npm run fetch:serve   # 定时拉取 + 本地 API
+npm run dev           # 另开终端：Vite 前端
+```
+
+## 配置
+
+应用内 **数据同步** 面板可图形化编辑；也可直接改配置文件。
+
+| 场景 | 配置文件 | 数据目录 |
+|------|----------|----------|
+| 原生 2.0 | `~/Library/Application Support/蔚来车辆看板/config.env` | `~/Library/Application Support/蔚来车辆看板/data/` |
+| 开发 `electron:dev` | `~/Library/Application Support/nio-mac/config.env` | `~/Library/Application Support/nio-mac/data/` |
+| 打包 `.app` | `~/Library/Application Support/蔚来车辆看板/config.env` | `~/Library/Application Support/蔚来车辆看板/data/` |
+
+参考模板：`deploy/.env.example`
+
+原生版首次启动会原地兼容现有 JSON 和 `card-layout.json`，再把敏感配置原子迁入 Keychain 并清空配置文件中的对应明文。迁移前建议自行备份该目录；应用不会上传备份。
+
+### 如何获取 API 配置（抓包）
+
+本看板通过**重放蔚来 App 自己的请求**来认证，不单独实现登录。因此需要先在手机上抓一次包，把 App 发出的真实 URL 和 Token 填进配置。
+
+#### 1. 架设 MITM 代理
+
+在手机与网络之间架设中间人代理，任选其一即可：
+
+mitmproxy · Reqable · Charles · Surge · Quantumult X …
+
+在手机上**安装并信任**代理工具的 CA 证书（否则 HTTPS 无法解密）。
+
+#### 2. 抓取车辆状态请求
+
+1. 打开**蔚来 App**
+2. 进入车辆页，**下拉刷新**一次
+3. 在代理记录中找到这条请求：
+
+```
+GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
+```
+
+#### 3. 复制两样东西
+
+| 填入看板 | 从哪里取 |
+|----------|----------|
+| **车辆 API URL** | 整条请求 URL：从 `https://…/status?` 一直到末尾的 `…&sign=…`，**全部复制** |
+| **Authorization Token** | 请求头 `Authorization: Bearer …` 中 `Bearer` 后面的部分（或整段 `Bearer …` 均可） |
+
+在应用内打开 **数据同步 → 车辆 API 配置 → 编辑**，分别粘贴到 `NIO_VEHICLE_API_URL` 与 `NIO_VEHICLE_ACCESS_TOKEN`，保存后点「刷新车辆」。
+
+> `sign` / `timestamp` 会过期。拉取失败时，重新在 App 里刷新车辆页，再抓一条新 URL 替换即可。
+
+换电、签到等接口同理：在 App 里触发对应操作，在代理里找到 `gateway-front-external.nio.com` 下的请求，复制完整 URL 与 `Authorization` 头。
+
+### 车辆 API（RVS）
+
+将抓包得到的 URL 与 Token 填入：
+
+| 变量 | 说明 |
+|------|------|
+| `NIO_VEHICLE_API_URL` | 完整 GET URL |
+| `NIO_VEHICLE_ACCESS_TOKEN` | Authorization Token |
+| `NIO_VEHICLE_POLL_DRIVING_SEC` | 行驶中间隔（秒，默认 900） |
+| `NIO_VEHICLE_POLL_DAY_SEC` | 白天间隔（秒，默认 1800） |
+| `NIO_VEHICLE_POLL_NIGHT_SEC` | 夜间间隔（秒，默认 3600） |
+
+`sign` 过期后需重新抓包并替换 URL。拉取脚本会将 RVS 响应归一化为 `data.status` 结构。
+
+### 换电 / 订单 API
+
+| 变量 | 说明 |
+|------|------|
+| `NIO_CHANGE_API_URL` | 完整 URL（POST，含 Query Params） |
+| `NIO_CHANGE_ACCESS_TOKEN` | Authorization Token |
+| `NIO_CHANGE_POLL_INTERVAL` | 拉取间隔（秒，默认 86400） |
+
+### 签到 API
+
+| 变量 | 说明 |
+|------|------|
+| `NIO_CHECKIN_API_URL` | GET 签到接口 URL |
+| `NIO_CHECKIN_ACCESS_TOKEN` | Token（可留空，沿用车辆 Token） |
+
+连接状态卡片显示 `checked_in`（今日是否签到）与 `continuous_days`（连续签到天数）。
+
+### 菜单栏显示
+
+| 变量 | 说明 |
+|------|------|
+| `NIO_TRAY_DISPLAY` | 逗号分隔：`soc` `range` `actual_range` `vehicle_state` `mileage` `orders` |
+
+## 看板操作
+
+| 操作 | 说明 |
+|------|------|
+| 拖拽排序 | 卡片右上角 ⠿ |
+| 隐藏卡片 | 卡片右上角眼睛图标 |
+| 查看 RVS JSON | 车辆卡片右上角 `{ }` |
+| 查看站点证书 | 家充桩卡片「站点证书」 |
+| 更新 Token | 数据同步 →「更新 Token」，粘贴 Bearer 或 HAR。车况和换电订单会重拉；HAR 里的家充月统计会写入本地 |
+| 批量管理 | 数据同步 → 卡片管理（默认折叠） |
+| 恢复默认 | 卡片管理内「恢复默认」 |
+
+布局优先保存在 `card-layout.json`（与 `config.env` 同目录）；纯 Web 开发时同步写入浏览器 `localStorage` 作为备份。
+
+## 数据文件
+
+| 文件 | 内容 |
+|------|------|
+| `vehicle.json` | 最新车辆状态 |
+| `change.json` | 服务 / 换电订单 |
+| `checkin.json` | 签到状态 |
+| `history.json` | 位置与电量历史（最多 2000 条） |
+| `last-fetch.json` | 车辆拉取元信息 |
+| `last-fetch-change.json` | 换电拉取元信息 |
+| `last-fetch-checkin.json` | 签到拉取元信息（含 `run_day`） |
+| `fetch-log.json` | 运行日志（最多 500 条，重启后保留） |
+| `card-layout.json` | 卡片排序与隐藏状态 |
+| `power.json` | 家充桩快照与按月的每日电量。来自 HAR 导入，程序不能自行重签家充请求 |
+| `journey-history.json` | 最近行程起终点，供每日路径合并 |
+| `daily-history.json` | 按天记下的当日里程 |
+
+### 采样说明
+
+- **车况采样时间**：界面显示的 `sample_time` 来自蔚来 API，表示车端上报时刻
+- **历史记录**：每次成功拉取车辆后，按 `soc_status.sample_time` 去重写入 `history.json`
+- **页面刷新**：看板定时重读本地 JSON；后台按行驶/白天/夜间策略调 API
+- **历史趋势**：电量默认近 1 日；日增里程 / 总里程 / 家充默认近 7 或 15 日。家充标题为时长 / 次数 / 电量。点「月」查看整月，并用左右箭头切换有记录的月份
+
+## 项目结构
+
+```
+├── native/             # SwiftPM、AppKit 状态栏、WK bridge、原生服务与打包检查
+├── electron/           # Electron 主进程、菜单栏、托盘
+├── src/                # React 前端
+│   ├── components/     # 看板、设置、拖拽网格
+│   ├── hooks/          # 卡片布局
+│   ├── platform/       # WK / HTTP transport、路由与原生事件
+│   └── lib/            # RVS 归一化、签到、存储、配置
+├── scripts/            # 拉取服务、签到调度、本地 API、打包
+├── deploy/             # Docker / NAS 部署示例、.env 模板
+└── release/            # 打包输出（不提交 Git）
+```
+
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `npm run native:test` | Swift 原生单元与集成测试 |
+| `npm run native:pack` | 构建并验证原生 ZIP |
+| `npm run native:pack:dmg` | 构建并验证原生 DMG |
+| `npm run electron:dev` | 构建并启动 Electron |
+| `npm run electron:pack` | 打包 `.app` |
+| `npm run electron:pack:dmg` | 打包 DMG |
+| `npm run build` | 仅构建前端 |
+| `npm run typecheck` | TypeScript 类型检查 |
+| `npm run fetch` | 手动拉取车辆 + 换电 |
+| `npm run fetch:watch` | CLI 后台定时拉取 |
+| `npm run serve:api` | 仅 API 服务 |
+
+## 更新日志
+
+### v2.0.0-beta.1（开发中）
+
+- **原生运行时**：Swift / AppKit 状态栏应用，双 WKWebView 窗口，无 Electron、Node 和本地 HTTP 服务
+- **紧凑面板**：车辆、电池、安全、轮胎、家充与同步状态共用实时快照，支持看板 / Token / 日志深链
+- **本机安全**：Keychain 密钥迁移、原子存储、URLSession 系统 TLS、日志脱敏和只读资源 scheme
+- **事件同步**：原生推送看板、日志和库存更新；Electron / NAS 继续使用轮询兼容模式
+- **发布保护**：arm64、30 MB 预算、签名和隐私内容自动检查，不打包车辆数据、照片、HAR 或官网素材
+
+### v1.10.0
+
+- **调整界面**：新增跟随系统深浅色的第三套主界面，重点信息、分类状态与同步入口集中展示
+- **本机车辆照片**：可为五个角度选择本机图片；照片仅保存在本机数据目录，不进入安装包或仓库
+- **拖动切换角度**：车辆照片支持左右拖动和方向键切换，缺少的角度会自动跳过
+- **可靠性**：超大图片上传返回明确错误，抠图缓存限制为五项并自动清理失败项
+- **README**：重新整理下载入口、产品简介与功能概览
+
+### v1.9.9
+
+- **车况示意图**：车头朝左放在中间，家充桩移到右侧；靠右的悬停提示向左展开，不再被裁掉
+
+### v1.9.8
+
+- **车况示意图**：座舱提示改到图内左上角，不再挡住下面的卡片
+
+### v1.9.7
+
+- **界面**：数据同步里可在老界面和新界面之间切换。新界面跟随系统深浅色，顶部有车况示意图
+
+### v1.9.6
+
+- **更新 Token**：选中失效的接口，完整地址在上，Bearer Token 在下
+
+### v1.9.5
+
+- **日增里程**：标题和累计按一位小数显示，不再出现一长串小数
+
+### v1.9.4
+
+- **家充图**：标题改为时长 / 次数 / 电量，并保留累计
+- **按月查看**：点「月」显示整月，左右箭头切换有充电记录的月份
+
+### v1.9.2
+
+- **家充统计**：历史趋势第四张图，和电量、里程同一套日期范围与缩放，按天画充入电量
+- **家充桩卡片**：展示桩状态、预约和上次充电。站点证书可点开查看 JSON
+- **更新 Token**：粘贴 Bearer 或 HAR 后刷新车况与换电订单；HAR 中的家充月统计写入 `power.json`
+- **换电订单**：默认走服务订单接口并翻到最后一页。默认定时 1 天，可选 12 小时、6 小时
+
+### v1.7.0
+
+- **错误分类**：车辆/换电拉取区分 sign 过期与 Token 失效，设置页与状态徽章给出针对性修复提示
+- **坐标修正**：GCJ-02 → WGS-84，地图轨迹、OSM 链接与逆地理编码与 OpenStreetMap 对齐
+- **抓包检查**：保存车辆 URL 时校验 `field=` 完整性，缺失关键字段时警告
+- **订单账本**：换电订单按 `orderNo` 持久化账本，50 条/页分页回填历史，完成后稳态拉最近 10 条 upsert
+
+### v1.6.0
+
+- **拉取间隔**：与「数据同步」配置严格一致；行驶中不论几点均用行驶间隔，非行驶按白天/夜间；修改间隔即时生效
+- **可靠性**：车辆拉取全局锁防并发写 history；refresh 并发 guard；history.json 校验；fallback 数据顶部警告
+- **API 状态**：配置检测与 fetch 脚本对齐（widget / legacy URL / 签到 Token）；签到独立同步时间
+- **每日路径**：跨午夜自动切今天；路径简化与 marker key 修复
+- **其他**：卡片布局 hydrate 竞态修复；启动时避免重复 API 拉取；`refresh("all")` 签到去重
+
+### v1.5.1
+
+- **数据同步**：车辆 / 换电 / 签到 API 标题旁显示 ✓ / ✕ 状态（依据最近拉取结果）
+- **每日行驶路径**：修复折叠面板内地图底图不加载；轨迹方向箭头与起点→终点标注
+
+### v1.5.0
+
+- **每日行驶路径修复**：统一使用 `history.json` 真实采样；过滤无效 GPS；位置时间戳与当前位置标记对齐
+- 移除模拟历史数据；服务端 `history.json` 为空时显示「暂无数据」
+- 前端 JSON 轮询间隔随行驶/白天/夜间策略动态调整；定时器仅读本地 JSON，不再重复触发 API
+- 切回窗口时 5 分钟内不重复拉 API；逆地理编码结果缓存
+- 趋势图降采样（最多 180 点/图）；卡片组件 memo 优化
+- JSON 原子写入；Vite / NAS nginx 补全 `/api/fetch-log`、`/api/card-layout` 代理
+- 开发：`npm run typecheck`；`NIO_DEVTOOLS=1` 才自动打开 DevTools
+
+### v1.4.0
+
+- **历史趋势**：三张图 — 电量（近 1 / 3 日）、**日增里程**（近 7 / 15 日）、总里程（近 7 / 15 日）
+- 日增里程按自然日汇总里程表增量，折线展示每日行驶距离
+- 图表支持起止日期、缩放与平移；电量 Y 轴固定 10% 刻度
+- 修复充电功率显示（API 单位为 W，界面换算为 kW）
+- 历史记录上限提升至 2000 条
+
+### v1.3.0
+
+- **运行日志**：数据同步 →「运行日志」，查看车辆/换电/签到拉取记录
+- 展示 **API 请求**（完整 URL / Body）、**拉取详情**、**完整 API 响应**（可折叠）
+- 失败时显示原因与修复建议；换电订单摘要使用正确字段（站点、状态名）
+- 日志持久化到 `fetch-log.json`，最多保留 500 条；弹窗内独立滚动列表
+- 打开日志时锁定背景滚动，避免看板跟着滑动
+
+### v1.2.0
+
+- 历史趋势：电量 / 续航 / 里程支持近 **1 / 3 / 5 / 7 日**切换，显示时段统计
+- 签到：9 点后仍为未签到时 **每 5 分钟重试**；车辆刷新时顺带更新签到状态
+- 车辆数据：API 失败时不再覆盖 `vehicle.json`；前端校验 `data.status`，避免看板白屏
+- 修复 Electron 打包后 `import.meta` CLI 误触发警告（`cli-main.ts`）
+
+### v1.1.0
+
+- 26 张车辆状态卡片，支持拖拽、隐藏、RVS JSON 查看
+- 服务订单卡片与可折叠订单表格
+- 签到 API：每天 9:00 拉取，9 点后首开补拉
+- 卡片管理 / 菜单栏设置 / API 配置三列布局，默认折叠
+- RVS 响应自动归一化，兼容新接口字段布局
+- 移除未使用的 `VehicleMap`、`AlertPanel` 组件
+
+### v1.0.0
+
+- 初始版本：菜单栏、车辆看板、换电订单、Electron 打包
+
+## 免责声明
+
+本项目为个人学习与交流用途，与蔚来（NIO）官方无关。请使用自己的账号 Token，勿将 `config.env` 或含 Token 的文件上传到公开仓库。
+
+## License
+
+MIT

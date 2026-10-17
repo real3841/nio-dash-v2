@@ -1,0 +1,118 @@
+import fs from "node:fs";
+import path from "node:path";
+import {
+  buildTrayTitle,
+  parseTrayDisplay,
+  type TrayVehicleData,
+} from "../src/lib/tray-display.js";
+import {
+  getChangePollIntervalSec,
+  getVehiclePollInfo,
+  parseEnvFromFile,
+} from "../scripts/poll-interval.js";
+
+export interface TrayStatus {
+  title: string;
+  tooltip: string;
+}
+
+function readJson<T>(filePath: string): T | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+function fmtClock(ts: number): string {
+  return new Date(ts).toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtPollSec(sec: number): string {
+  if (sec % 3600 === 0) return `${sec / 3600} 小时`;
+  if (sec % 60 === 0) return `${sec / 60} 分钟`;
+  return `${sec} 秒`;
+}
+
+function loadEnvFromFile(envFile: string): Record<string, string> {
+  try {
+    if (!fs.existsSync(envFile)) return {};
+    return parseEnvFromFile(fs.readFileSync(envFile, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+export function readTrayStatus(dataDir: string, envFile: string): TrayStatus {
+  const env = loadEnvFromFile(envFile);
+  const displayFields = parseTrayDisplay(env.NIO_TRAY_DISPLAY);
+  const vehiclePoll = getVehiclePollInfo(env, dataDir);
+  const changePollSec = getChangePollIntervalSec(env);
+
+  const vehicle = readJson<{
+    data?: {
+      status?: {
+        soc_status?: { soc?: number; remaining_range?: number; remaining_actual_range?: number };
+        exterior_status?: { vehicle_state?: number; mileage?: number };
+      };
+    };
+  }>(path.join(dataDir, "vehicle.json"));
+
+  const vehicleMeta = readJson<{ ok?: boolean; at?: number; error?: string | null }>(
+    path.join(dataDir, "last-fetch.json"),
+  );
+  const changeMeta = readJson<{ ok?: boolean; at?: number; error?: string | null }>(
+    path.join(dataDir, "last-fetch-change.json"),
+  );
+  const change = readJson<{ resultData?: { data?: unknown[] } }>(path.join(dataDir, "change.json"));
+
+  const soc = vehicle?.data?.status?.soc_status?.soc;
+  const range = vehicle?.data?.status?.soc_status?.remaining_range;
+  const actualRange = vehicle?.data?.status?.soc_status?.remaining_actual_range;
+  const mileage = vehicle?.data?.status?.exterior_status?.mileage;
+  const state = vehicle?.data?.status?.exterior_status?.vehicle_state;
+  const orders = change?.resultData?.data;
+  const orderCount = Array.isArray(orders) ? orders.length : null;
+
+  const trayData: TrayVehicleData = {
+    soc,
+    range,
+    actualRange,
+    vehicleState: state,
+    mileage,
+    orderCount,
+  };
+
+  const title = buildTrayTitle(displayFields, trayData);
+
+  const lines = ["蔚来车辆看板", `菜单栏：${title}`];
+  if (typeof soc === "number") {
+    lines.push(`电量 ${Number.isInteger(soc) ? soc : soc.toFixed(1)}%`);
+  }
+  if (typeof range === "number") lines.push(`续航 ${range} km`);
+  if (orderCount !== null) lines.push(`换电/服务记录 ${orderCount} 条`);
+  lines.push(
+    vehiclePoll.reason === "fota"
+      ? `车辆拉取 · 系统更新中每 ${fmtPollSec(vehiclePoll.intervalSec)}，结束后恢复设定间隔`
+      : `车辆拉取 · ${vehiclePoll.reasonLabel} 每 ${fmtPollSec(vehiclePoll.intervalSec)}（行驶/白天/夜间可配）`,
+  );
+  lines.push(`换电拉取 · 每 ${fmtPollSec(changePollSec)}`);
+  if (vehicleMeta?.at) {
+    lines.push(
+      `车辆 ${vehicleMeta.ok ? "✓" : "✗"} ${fmtClock(vehicleMeta.at)}${vehicleMeta.error ? ` · ${vehicleMeta.error}` : ""}`,
+    );
+  }
+  if (changeMeta?.at) {
+    lines.push(
+      `换电 ${changeMeta.ok ? "✓" : "✗"} ${fmtClock(changeMeta.at)}${changeMeta.error ? ` · ${changeMeta.error}` : ""}`,
+    );
+  }
+
+  return { title, tooltip: lines.join("\n") };
+}

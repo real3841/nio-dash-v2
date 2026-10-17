@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>蔚来</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: transparent; }
+      body {
+        font-family: -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+        color: #eef1f7;
+        -webkit-font-smoothing: antialiased;
+        font-size: 12px;
+      }
+      .panel {
+        position: relative;
+        width: 340px;
+        margin: 10px;
+        padding: 14px 14px 12px;
+        border-radius: 30px;
+        overflow: hidden;
+        background:
+          radial-gradient(260px 200px at 52% 25%, rgba(255, 170, 90, 0.16), transparent 70%),
+          radial-gradient(300px 220px at 50% 32%, rgba(80, 110, 180, 0.22), transparent 72%),
+          linear-gradient(180deg, #24201f 0%, #15161b 42%, #0d0e12 100%);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      .head { display: flex; align-items: center; gap: 10px; }
+      .tile {
+        flex: 0 0 auto;
+        display: grid; place-items: center;
+        width: 32px; height: 32px; border-radius: 10px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .tile svg { width: 16px; height: 16px; }
+      .title { flex: 1; min-width: 0; }
+      .name { font-size: 15px; font-weight: 650; letter-spacing: 0.01em; }
+      .sub { margin-top: 2px; color: #9aa1b2; font-size: 11.5px; white-space: nowrap; }
+      .sub b { color: #e7ebf3; font-weight: 600; }
+      .dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 99px; background: #34d399; vertical-align: 1px; box-shadow: 0 0 6px #34d399; }
+      .icon-btn {
+        display: grid; place-items: center;
+        width: 32px; height: 32px; border-radius: 99px;
+        background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #cfd5e2;
+      }
+      .icon-btn svg { width: 15px; height: 15px; }
+      .power {
+        width: 40px; height: 40px;
+        background: radial-gradient(circle at 50% 35%, #4d8dff, #1f5fe0);
+        border: 0; color: #fff;
+        box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.18), 0 8px 22px rgba(47, 107, 255, 0.55);
+      }
+      .power svg { width: 18px; height: 18px; }
+
+      .scene { position: relative; height: 176px; margin: 4px -14px 2px; }
+      .scene::before {
+        content: ""; position: absolute; inset: 22px 30px 18px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(255, 190, 120, 0.12), transparent);
+        filter: blur(6px);
+      }
+      .scene svg { position: relative; width: 100%; height: 100%; }
+      .scene .badge {
+        position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+        padding: 3px 10px; border-radius: 99px;
+        background: rgba(10, 12, 16, 0.6); border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #aab2c3; font-size: 10.5px; white-space: nowrap;
+        backdrop-filter: blur(8px);
+      }
+
+      .scenes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+      .scene-btn {
+        display: grid; justify-items: center; gap: 5px;
+        padding: 9px 0 8px; border-radius: 14px;
+        background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.07);
+        color: #c9cfdc; font-size: 11px;
+      }
+      .scene-btn svg { width: 16px; height: 16px; }
+      .scene-btn.on {
+        background: linear-gradient(180deg, rgba(64, 112, 220, 0.38), rgba(40, 70, 150, 0.28));
+        border-color: rgba(110, 160, 255, 0.55);
+        color: #fff;
+        box-shadow: 0 0 18px rgba(70, 120, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+
+      .pills { display: flex; gap: 6px; margin: 12px 0 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 11px; border-radius: 99px;
+        background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.07);
+        color: #c3c9d6; font-size: 11.5px;
+      }
+      .pill.on { background: #eef1f7; color: #111318; border-color: transparent; font-weight: 600; }
+      .pill i {
+        display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px;
+        border-radius: 99px; background: #f59e0b; color: #1b1205; font-style: normal; font-size: 10px; font-weight: 700;
+      }
+
+      .bar-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+      .bar-head strong { font-size: 12px; font-weight: 650; }
+      .bar-head span { color: #8e96a8; font-size: 11px; }
+      .bar-head .sp { flex: 1; }
+      .mini {
+        padding: 4px 9px; border-radius: 99px;
+        background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #b9c0ce; font-size: 10.5px;
+      }
+      .section { margin: 10px 0 6px; color: #6f7789; font-size: 10px; letter-spacing: 0.14em; }
+
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .card {
+        position: relative;
+        display: flex; align-items: center; gap: 10px;
+        min-height: 54px; padding: 10px 11px; border-radius: 16px;
+        background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.07);
+        overflow: hidden;
+      }
+      .card.wide { grid-column: 1 / -1; }
+      .card .ic {
+        flex: 0 0 auto; display: grid; place-items: center;
+        width: 30px; height: 30px; border-radius: 10px;
+        background: rgba(255, 255, 255, 0.07); color: #b9c0ce;
+      }
+      .card .ic svg { width: 16px; height: 16px; }
+      .card .txt { flex: 1; min-width: 0; }
+      .card .t { font-size: 12.5px; font-weight: 620; }
+      .card .s { margin-top: 2px; color: #8e96a8; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      .card.blue {
+        background: linear-gradient(180deg, rgba(48, 84, 160, 0.45), rgba(28, 44, 86, 0.5));
+        border-color: rgba(110, 160, 255, 0.5);
+        box-shadow: 0 0 24px rgba(60, 110, 240, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+      .card.blue .ic { background: linear-gradient(180deg, #5b9bff, #2e6ae6); color: #fff; box-shadow: 0 0 14px rgba(80, 140, 255, 0.6); }
+      .card.blue .s { color: #a9bce4; }
+      .card.warm {
+        background: linear-gradient(180deg, rgba(120, 82, 40, 0.42), rgba(60, 40, 22, 0.5));
+        border-color: rgba(255, 190, 110, 0.45);
+        box-shadow: 0 0 22px rgba(255, 160, 70, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+      .card.warm .ic { background: linear-gradient(180deg, #ffd08a, #f59e3b); color: #3a2205; box-shadow: 0 0 14px rgba(255, 170, 80, 0.6); }
+      .card.warm .s { color: #d9b991; }
+      .card.hot {
+        background: linear-gradient(180deg, rgba(150, 64, 36, 0.48), rgba(70, 30, 20, 0.55));
+        border-color: rgba(255, 130, 90, 0.5);
+        box-shadow: 0 0 22px rgba(255, 110, 60, 0.25);
+      }
+      .card.hot .ic { background: linear-gradient(180deg, #ff9a6b, #f0562a); color: #fff; box-shadow: 0 0 14px rgba(255, 110, 60, 0.6); }
+      .card.hot .s { color: #e3ab95; }
+      .card .meter { position: absolute; left: 11px; right: 11px; bottom: 6px; height: 3px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); }
+      .card .meter b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff7a45, #ffb27a); box-shadow: 0 0 8px rgba(255, 120, 70, 0.8); }
+
+      .num { display: flex; align-items: center; gap: 10px; color: #dfe5f1; }
+      .num .big { font-size: 22px; font-weight: 300; letter-spacing: -0.02em; }
+      .num .big small { font-size: 12px; color: #86efac; margin-left: 1px; }
+      .round {
+        display: grid; place-items: center; width: 30px; height: 30px; border-radius: 99px;
+        background: radial-gradient(circle at 50% 35%, #4d8dff, #1f5fe0); color: #fff;
+        box-shadow: 0 0 14px rgba(70, 130, 255, 0.7);
+      }
+      .round svg { width: 14px; height: 14px; }
+
+      .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; color: #6f7789; font-size: 10.5px; }
+      .foot a { color: #9aa1b2; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <div class="head">
+        <div class="tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#dfe5f1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 16V11l2-5h10l2 5v5" /><path d="M3 16h18v3H3z" /><circle cx="7.5" cy="13" r="1" /><circle cx="16.5" cy="13" r="1" />
+          </svg>
+        </div>
+        <div class="title">
+          <div class="name">我的 ES6</div>
+          <div class="sub"><span class="dot"></span><b>80.5%</b> · 286 km · 已驻车</div>
+        </div>
+        <div class="icon-btn" title="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+        </div>
+        <div class="icon-btn power" title="立即刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
+        </div>
+      </div>
+
+      <div class="scene">
+        <svg viewBox="20 18 740 264" aria-hidden="true">
+          <defs>
+            <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#4a5163" /><stop offset="1" stop-color="#222733" />
+            </linearGradient>
+            <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#36486b" /><stop offset="1" stop-color="#131a28" />
+            </linearGradient>
+            <radialGradient id="lamp" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#ffcf8a" stop-opacity="0.55" /><stop offset="1" stop-color="#ffcf8a" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="beam" cx="0" cy="0.5" r="1">
+              <stop offset="0" stop-color="#cfe0ff" stop-opacity="0.35" /><stop offset="1" stop-color="#cfe0ff" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <rect x="40" y="34" width="700" height="232" rx="26" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.06)" />
+          <path d="M 120 50 V 250 M 660 50 V 250" stroke="rgba(255,255,255,0.07)" stroke-dasharray="10 10" />
+          <g transform="rotate(180 390 150)">
+            <circle cx="75" cy="150" r="90" fill="url(#lamp)" />
+            <ellipse cx="390" cy="158" rx="236" ry="96" fill="rgba(0,0,0,0.45)" />
+            <path d="M 612 150 L 760 70 L 760 230 Z" fill="url(#beam)" />
+            <rect x="50" y="74" width="50" height="152" rx="14" fill="#2b313d" stroke="rgba(255,255,255,0.18)" />
+            <rect x="60" y="188" width="30" height="22" rx="5" fill="#0a0d12" />
+            <circle cx="75" cy="172" r="4" fill="#34d399" />
+            <rect x="42" y="68" width="66" height="10" rx="5" fill="#1b1f27" />
+            <rect x="206" y="56" width="58" height="20" rx="7" fill="#05070b" stroke="rgba(52,211,153,0.6)" />
+            <rect x="481" y="56" width="58" height="20" rx="7" fill="#05070b" stroke="rgba(52,211,153,0.6)" />
+            <rect x="206" y="224" width="58" height="20" rx="7" fill="#05070b" stroke="rgba(52,211,153,0.6)" />
+            <rect x="481" y="224" width="58" height="20" rx="7" fill="#05070b" stroke="rgba(52,211,153,0.6)" />
+            <path d="M 215 72 H 540 C 585 72 610 100 612 150 C 610 200 585 228 540 228 H 215 C 185 228 168 205 168 150 C 168 95 185 72 215 72 Z" fill="url(#body)" stroke="rgba(255,255,255,0.18)" />
+            <rect x="436" y="62" width="16" height="10" rx="4" fill="#3a4152" />
+            <rect x="436" y="228" width="16" height="10" rx="4" fill="#3a4152" />
+            <path d="M 236 84 H 215 C 192 84 180 108 180 150 C 180 192 192 216 215 216 H 236 Q 226 150 236 84 Z" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" />
+            <path d="M 474 84 H 540 C 578 84 598 108 600 150 C 598 192 578 216 540 216 H 474 Q 484 150 474 84 Z" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" />
+            <path d="M 270 98 Q 242 102 240 150 Q 242 198 270 202 Z" fill="url(#glass)" />
+            <path d="M 432 96 Q 470 100 472 150 Q 470 200 432 204 Z" fill="url(#glass)" />
+            <rect x="272" y="96" width="158" height="108" rx="22" fill="#1d222c" stroke="rgba(255,255,255,0.12)" />
+            <rect x="296" y="170" width="110" height="8" rx="4" fill="rgba(255,255,255,0.1)" />
+            <rect x="296" y="170" width="88.5" height="8" rx="4" fill="#22c55e" />
+            <circle cx="351" cy="138" r="18" fill="rgba(255,200,130,0.18)" />
+            <circle cx="351" cy="138" r="5" fill="#ffd9a0" />
+            <path d="M 590 96 Q 604 108 606 124" stroke="#e8f0ff" stroke-width="4" stroke-linecap="round" fill="none" />
+            <path d="M 590 204 Q 604 192 606 176" stroke="#e8f0ff" stroke-width="4" stroke-linecap="round" fill="none" />
+            <path d="M 174 104 Q 168 150 174 196" stroke="#ff4d4d" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8" />
+          </g>
+        </svg>
+        <div class="badge">已上锁 · 车门车窗全关 · 胎压正常</div>
+      </div>
+
+      <div class="scenes">
+        <div class="scene-btn on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
+          刷新
+        </div>
+        <div class="scene-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8" /></svg>
+          看板
+        </div>
+        <div class="scene-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3" /></svg>
+          Token
+        </div>
+        <div class="scene-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5h14M5 10h14M5 15h9M5 20h6" /></svg>
+          日志
+        </div>
+        <div class="scene-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v9" /><path d="M6.3 7.3a8 8 0 1 0 11.4 0" /></svg>
+          退出
+        </div>
+      </div>
+
+      <div class="pills">
+        <span class="pill on">全部</span>
+        <span class="pill">车况 <i>4</i></span>
+        <span class="pill">充电 <i>1</i></span>
+        <span class="pill">换电</span>
+      </div>
+
+      <div class="bar-head">
+        <strong>整车</strong><span>· 6 项正常</span><span class="sp"></span>
+        <span class="mini">车况 白天 30 分</span><span class="mini">换电 每 24 时</span>
+      </div>
+
+      <div class="section">车 况</div>
+      <div class="grid">
+        <div class="card wide blue">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="7" width="16" height="10" rx="2" /><path d="M21 10v4" /><path d="M10 9l-2 4h4l-2 4" /></svg>
+          </div>
+          <div class="txt"><div class="t">电池</div><div class="s">实际 286 km · 未充电</div></div>
+          <div class="num"><span class="big">80.5<small>%</small></span><span class="round">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
+          </span></div>
+        </div>
+        <div class="card">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+          </div>
+          <div class="txt"><div class="t">车锁</div><div class="s">已上锁 · 车门全关</div></div>
+        </div>
+        <div class="card">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 14V5a2 2 0 1 1 4 0v9a4 4 0 1 1-4 0z" transform="translate(-2 0)" /></svg>
+          </div>
+          <div class="txt"><div class="t">27.5°</div><div class="s">车内 · 车外 23.5°</div></div>
+        </div>
+      </div>
+
+      <div class="section">充 电</div>
+      <div class="grid">
+        <div class="card warm">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="10" height="18" rx="2" /><path d="M15 9h2a2 2 0 0 1 2 2v4a1 1 0 0 0 2 0V8l-2-2" /><path d="M10 7l-2 4h4l-2 4" /></svg>
+          </div>
+          <div class="txt"><div class="t">家充桩</div><div class="s">空闲 · 预约 23:00</div></div>
+        </div>
+        <div class="card">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>
+          </div>
+          <div class="txt"><div class="t">胎压</div><div class="s">2.8 bar · 30°C</div></div>
+        </div>
+        <div class="card wide hot">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z" /></svg>
+          </div>
+          <div class="txt"><div class="t">本月家充 84.7 kWh</div><div class="s">11 次 · 7 小时 41 分 · 上次 10/16 8.2 kWh</div></div>
+          <div class="meter"><b style="width: 62%"></b></div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>车辆 ✓ 15:12 · 换电 ✓ 今天 09:00</span>
+        <a>换电 75 次 ›</a>
+      </div>
+    </div>
+  </body>
+</html>
