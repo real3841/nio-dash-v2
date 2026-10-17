@@ -48,12 +48,13 @@ button { color: inherit; font: inherit; }
   display: grid;
   width: 36px;
   height: 36px;
+  flex: 0 0 36px;
   place-items: center;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 11px;
   background: rgba(255,255,255,.07);
-  font-size: 23px;
 }
+.tray-app-icon svg { width: 25px; height: 25px; fill: #f5f7fb; }
 .tray-vehicle-title strong { display: block; font-size: 15px; font-weight: 650; }
 .tray-vehicle-title small {
   display: block;
@@ -114,7 +115,13 @@ button { color: inherit; font: inherit; }
   content: "";
   filter: blur(8px);
 }
-.tray-car-scene svg { position: relative; width: 155px; height: 225px; filter: drop-shadow(0 14px 18px rgba(0,0,0,.48)); }
+.tray-car-scene .tray-car-graphic {
+  position: relative;
+  width: 155px;
+  height: 225px;
+  transform: rotate(90deg);
+  filter: drop-shadow(14px 0 18px rgba(0,0,0,.48));
+}
 .tray-road-line {
   position: absolute;
   top: 30px;

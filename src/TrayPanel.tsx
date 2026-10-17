@@ -109,7 +109,12 @@ export function TrayPanel() {
     <main className="tray-panel">
       <header className="tray-header">
         <button className="tray-vehicle-title" type="button" onClick={() => open("dashboard")}>
-          <span className="tray-app-icon">⌁</span>
+          <span className="tray-app-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64">
+              <path d="M7 31C10 15 20 6 32 6s22 9 25 25C49 23 41 18 32 18S15 23 7 31Z" />
+              <path d="M7 37c6 2 13 7 20 16V37H7Zm50 0H37v16c7-9 14-14 20-16Z" />
+            </svg>
+          </span>
           <span>
             <strong>我的蔚来</strong>
             <small>
@@ -135,7 +140,7 @@ export function TrayPanel() {
       <button className="tray-car-scene" type="button" onClick={() => open("dashboard")} aria-label="打开完整看板">
         <span className="tray-road-line left" />
         <span className="tray-road-line right" />
-        <svg viewBox="0 0 180 280" aria-hidden="true">
+        <svg className="tray-car-graphic" viewBox="0 0 180 280" aria-hidden="true">
           <defs>
             <linearGradient id="tray-car-body" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor="#586273" />
