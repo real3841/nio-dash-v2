@@ -58,11 +58,24 @@ const DARK_TILES: MapTileConfig = {
   maxZoom: 16,
 };
 
-/** 高德底图是浅色，粉色压不住，改用青色 */
+/** 深色 / 浅色下的默认配色 */
 const COLOR_DARK = "#ff5ec8";
 const COLOR_DOT_DARK = "#ff8ada";
 const COLOR_LIGHT = "#0091b3";
 const COLOR_DOT_LIGHT = "#00b8d4";
+
+/** 可选轨迹配色：深色底图上道路偏橙，这些颜色区分度较高 */
+const PALETTE: { id: string; label: string; line: string; dot: string }[] = [
+  { id: "pink", label: "粉红", line: "#ff5ec8", dot: "#ff8ada" },
+  { id: "cyan", label: "青色", line: "#22d3ee", dot: "#67e8f9" },
+  { id: "green", label: "亮绿", line: "#4ade80", dot: "#86efac" },
+  { id: "amber", label: "橙黄", line: "#fbbf24", dot: "#fcd34d" },
+  { id: "violet", label: "紫色", line: "#a78bfa", dot: "#c4b5fd" },
+  { id: "red", label: "朱红", line: "#fb7185", dot: "#fda4af" },
+  { id: "white", label: "雪白", line: "#f8fafc", dot: "#e2e8f0" },
+];
+
+const COLOR_KEY = "nio-track-color";
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
@@ -80,18 +93,20 @@ function TrackLayer({
   tileConfig,
   boundsKey,
   light,
+  lineColor,
+  dotColor,
 }: {
   trips: TrackTrip[];
   mode: "line" | "dot";
   tileConfig: MapTileConfig;
   boundsKey: string;
   light: boolean;
+  lineColor: string;
+  dotColor: string;
 }) {
   const map = useMap();
   const fitted = useRef<string>("");
   const isLight = light;
-  const lineColor = isLight ? COLOR_LIGHT : COLOR_DARK;
-  const dotColor = isLight ? COLOR_DOT_LIGHT : COLOR_DOT_DARK;
 
   useEffect(() => {
     const renderer = L.canvas({ padding: 0.3 });
@@ -159,6 +174,13 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState<"idle" | "loading" | "empty" | "ready">("idle");
   const [appTiles, setAppTiles] = useState<MapTileConfig>(() => mapTileFromEnv({}));
   const [useDark, setUseDark] = useState(false);
+  const [colorId, setColorId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(COLOR_KEY) ?? "auto";
+    } catch {
+      return "auto";
+    }
+  });
   const [reloadToken, setReloadToken] = useState(0);
   const [syncStatus, setSyncStatus] = useState<TrackSyncStatus | null>(null);
 
@@ -300,6 +322,20 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   /** 没有高德 Key 时，深色退回 Esri 深灰底图 */
   const base = useDark && !darkAmap ? DARK_TILES : tileConfig;
 
+  const preset = PALETTE.find((item) => item.id === colorId);
+  const lineColor = preset?.line ?? (useDark ? COLOR_DARK : COLOR_LIGHT);
+  const dotColor = preset?.dot ?? (useDark ? COLOR_DOT_DARK : COLOR_DOT_LIGHT);
+
+  const pickColor = (id: string) => {
+    setColorId(id);
+    try {
+      if (id === "auto") localStorage.removeItem(COLOR_KEY);
+      else localStorage.setItem(COLOR_KEY, id);
+    } catch {
+      // 忽略存储失败
+    }
+  };
+
   const body = (
     <>
       {status === "empty" && (
@@ -389,6 +425,39 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
             <button type="button" onClick={() => setUseDark((v) => !v)} style={{ ...segStyle(useDark), marginLeft: 8 }}>
               深色
             </button>
+            <span style={{ display: "inline-flex", gap: 5, marginLeft: 10, alignItems: "center" }}>
+              {PALETTE.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={item.label}
+                  onClick={() => pickColor(item.id)}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    padding: 0,
+                    borderRadius: 999,
+                    cursor: "pointer",
+                    background: item.line,
+                    border: colorId === item.id ? "2px solid #fff" : "1px solid rgba(128,128,128,.45)",
+                    boxShadow: colorId === item.id ? "0 0 0 1px rgba(0,0,0,.35)" : "none",
+                  }}
+                />
+              ))}
+              <button
+                type="button"
+                title="跟随深浅色自动"
+                onClick={() => pickColor("auto")}
+                style={{
+                  ...segStyle(colorId === "auto"),
+                  padding: "2px 7px",
+                  fontSize: 10,
+                  marginLeft: 2,
+                }}
+              >
+                自动
+              </button>
+            </span>
             <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
               {trips.length} 趟 · {shown.points.toLocaleString()} 点 ·{" "}
               {tileConfig.provider === "amap" ? (useDark ? "高德深色" : "高德") : useDark ? "Esri 深色" : "OSM"}
@@ -424,8 +493,10 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
                 trips={trips}
                 mode={mode}
                 tileConfig={base}
-                boundsKey={`${boundsKey}-${useDark ? "dark" : "light"}`}
+                boundsKey={`${boundsKey}-${useDark ? "dark" : "light"}-${colorId}`}
                 light={!useDark}
+                lineColor={lineColor}
+                dotColor={dotColor}
               />
             </MapContainer>
           </div>
