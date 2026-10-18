@@ -391,6 +391,7 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
             <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
               {trips.length} 趟 · {shown.points.toLocaleString()} 点 ·{" "}
               {tileConfig.provider === "amap" ? (useDark ? "高德深色" : "高德") : useDark ? "Esri 深色" : "OSM"}
+              {tileConfig.provider !== "amap" && " · 未取到高德 Key"}
             </span>
           </div>
 
