@@ -27,15 +27,16 @@ export function PathPanel({
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
-    border: 0,
-    borderRadius: 8,
-    padding: "7px 10px",
-    fontSize: 12,
+    border: active ? "1px solid transparent" : "1px solid rgba(128,128,128,.35)",
+    borderRadius: 9,
+    padding: "8px 12px",
+    fontSize: 12.5,
     cursor: "pointer",
-    background: active ? "rgba(96,165,250,.18)" : "rgba(255,255,255,.05)",
-    color: active ? "#dbeafe" : "#8b93a7",
-    fontWeight: active ? 600 : 400,
-    transition: "background .15s",
+    background: active ? "#2563eb" : "transparent",
+    color: active ? "#ffffff" : "inherit",
+    fontWeight: active ? 600 : 500,
+    opacity: active ? 1 : 0.72,
+    transition: "background .15s, opacity .15s",
   });
 
   return (
@@ -50,7 +51,6 @@ export function PathPanel({
     >
       <summary>
         <span>行驶轨迹</span>
-        <span className="drawer-summary-meta">{tab === "tracks" ? "历史轨迹" : "每日路径"}</span>
       </summary>
 
       {open && (

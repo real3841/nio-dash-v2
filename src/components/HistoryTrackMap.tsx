@@ -403,6 +403,7 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
           <div style={{ height: 420, borderRadius: 12, overflow: "hidden" }}>
             {useAmap ? (
               <AmapTrackMap
+                key={useDark ? "amap-dark" : "amap-light"}
                 trips={trips}
                 mode={mode}
                 dark={useDark}

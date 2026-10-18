@@ -53,11 +53,16 @@ export function AmapTrackMap({
 
         const style = dark ? "amap://styles/dark" : "amap://styles/normal";
         if (!mapRef.current) {
-          mapRef.current = new AMap.Map(boxRef.current, {
+          const map = new AMap.Map(boxRef.current, {
             zoom: 11,
             center: [121.6, 38.91],
             viewMode: "2D",
             mapStyle: style,
+          });
+          mapRef.current = map;
+          // 地图完全就绪后再设一次样式，避免创建阶段样式被忽略
+          map.on("complete", () => {
+            mapRef.current?.setMapStyle(style);
           });
         } else {
           mapRef.current.setMapStyle(style);
