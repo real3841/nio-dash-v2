@@ -7,8 +7,7 @@ export function resolveApiStatus(
   meta: FetchMeta | null | undefined,
   configured: boolean,
 ): ApiConfigStatus {
-  if (!configured) return "unset";
-  if (!meta) return "pending";
+  if (!meta) return configured ? "pending" : "unset";
   if (!meta.ok) return "error";
   return meta.warning ? "partial" : "ok";
 }

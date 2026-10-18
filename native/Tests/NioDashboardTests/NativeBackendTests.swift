@@ -253,6 +253,30 @@ private final class FakeLegacySecretStore: LegacySecretStore, @unchecked Sendabl
     #expect(SyncCoordinator.mergedVehiclePayload(widget: nil, status: nil) == nil)
 }
 
+@Test func dailyMileageSumsTripsThatEndedToday() {
+    let midnight = 1_700_000_000.0
+    let trip: (Double, Double) -> JSONValue = { end, km in
+        .object(["end_time": .number(end), "trip_odometer": .number(km)])
+    }
+    let payload: JSONValue = .object(["data": .object(["detail": .array([
+        trip(midnight + 3_600, 12.34),
+        trip((midnight + 7_200) * 1_000, 5.0),
+        trip(midnight - 60, 99),
+    ])])])
+    #expect(SyncCoordinator.dailyMileage(fromJourneys: payload, since: midnight) == 17.3)
+    #expect(SyncCoordinator.dailyMileage(fromJourneys: .object([:]), since: midnight) == 0)
+}
+
+@Test func gatewayURLCarriesCommonParametersWithoutSign() throws {
+    let url = SyncCoordinator.gatewayURL(appID: "10086", path: "/app/api/icar/v2/widget/info",
+                                         query: [("vehicle_id", "vehicle-test")], env: [:])
+    let items = URLComponents(string: url)?.queryItems ?? []
+    #expect(url.hasPrefix("https://gateway-front-external.nio.com/moat/10086/app/api/icar/v2/widget/info?"))
+    #expect(items.first { $0.name == "token_app_id" }?.value == "10002")
+    #expect(items.first { $0.name == "vehicle_id" }?.value == "vehicle-test")
+    #expect(!items.contains { $0.name == "sign" })
+}
+
 @Test func apiFailuresAreClassifiedForTheAuthPanel() {
     let signFailed: JSONValue = .object(["result_code": .string("sign_failed")])
     #expect(SyncCoordinator.apiFailure(signFailed, status: 400, signed: true).kind == .sign)

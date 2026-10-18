@@ -2253,6 +2253,56 @@ a {
   color: var(--amber-text);
 }
 
+.auth-slot-chip.off {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.auth-slot-chip.off .auth-slot-mark {
+  color: var(--muted);
+}
+
+.auth-slot-source {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+}
+
+.auth-slot-source-name {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auth-slot-source .auth-slot-address,
+.auth-slot-source .auth-slot-status {
+  margin-bottom: 0;
+}
+
+.auth-slot-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn.btn-small {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.auth-slot-guide {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .auth-slot-mark {
   font-size: 11px;
   color: var(--amber-text);

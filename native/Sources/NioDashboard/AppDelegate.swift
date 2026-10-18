@@ -334,6 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     func openDashboard(route: String?) {
         dismissCompactPanel()
         guard let window = dashboardWindow else { return }
+        // 菜单栏模式下没有 Dock 图标和 ⌘Tab 入口，大看板被别的窗口盖住后就找不回来
+        NSApplication.shared.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
         if let route {
@@ -368,6 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Nati
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender === dashboardWindow, !isTerminating {
             sender.orderOut(nil)
+            NSApplication.shared.setActivationPolicy(.accessory)
             return false
         }
         return true

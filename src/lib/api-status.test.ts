@@ -9,3 +9,9 @@ test("successful fetch with a failed sub-endpoint is partial", () => {
   assert.equal(resolveApiStatus({ ok: true, at: 1, error: null }, true), "ok");
   assert.equal(resolveApiStatus({ ok: false, at: 1, error: "x" }, true), "error");
 });
+
+test("signed URLs hidden from the settings page still count as configured once fetched", () => {
+  assert.equal(resolveApiStatus({ ok: true, at: 1, error: null }, false), "ok");
+  assert.equal(resolveApiStatus(null, false), "unset");
+  assert.equal(resolveApiStatus(null, true), "pending");
+});

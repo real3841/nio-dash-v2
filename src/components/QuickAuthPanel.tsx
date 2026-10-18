@@ -11,6 +11,11 @@ interface AuthSlotView {
   kind: "sign" | "auth" | "generic" | null;
   error?: string | null;
   at?: number | null;
+  capture: string;
+  search: string;
+  /** 后端支持停用时才有 */
+  optional?: boolean;
+  enabled?: boolean;
 }
 
 interface QuickAuthResponse {
@@ -61,7 +66,63 @@ function withDefaults(slot: Partial<AuthSlotView> & { id: string }): AuthSlotVie
     kind: null,
     ...slot,
     address: slot.address || def?.address || "",
+    capture: def?.capture ?? "",
+    search: def?.search ?? "",
   };
+}
+
+/** 按失效类型告诉用户这次到底要贴什么 */
+function whatToPaste(slot: AuthSlotView): string {
+  if (slot.kind === "auth") return "这次只要贴新的 Bearer Token，地址不用换。";
+  if (slot.kind === "sign" || slot.needsUrl) {
+    return "这次只要把完整地址贴到「完整地址」，必须带 sign= 和 timestamp=。Token 没问题就不用填。";
+  }
+  return "先试着只贴新的 Bearer Token；还不行再把完整地址也贴上。";
+}
+
+/** 车况的两条接口放在同一个按钮下：小组件接口和 icar 车况整包互为备份 */
+const SLOT_GROUPS: Record<string, string[]> = { widget: ["widget", "status"] };
+const GROUPED_IDS = new Set(Object.values(SLOT_GROUPS).flatMap((ids) => ids.slice(1)));
+const MEMBER_LABELS: Record<string, string> = {
+  widget: "小组件接口（免签名，只需 Token）",
+  status: "车况整包（icar，含轮胎）",
+};
+
+function groupOf(id: string): string {
+  return Object.entries(SLOT_GROUPS).find(([, ids]) => ids.includes(id))?.[0] ?? id;
+}
+
+function membersOf(id: string, slots: AuthSlotView[]): AuthSlotView[] {
+  const ids = SLOT_GROUPS[id] ?? [id];
+  return ids.flatMap((memberId) => slots.filter((slot) => slot.id === memberId));
+}
+
+function groupMark(members: AuthSlotView[]): { text: string; tone: "failed" | "off" } | null {
+  const enabled = members.filter((slot) => slot.enabled !== false);
+  if (enabled.length === 0) return { text: "未接入", tone: "off" };
+  const failedMember = enabled.find((slot) => failureLabel(slot));
+  if (failedMember) return { text: failureLabel(failedMember)!, tone: "failed" };
+  if (enabled.length < members.length) return { text: "部分接入", tone: "off" };
+  return null;
+}
+
+function memberStatus(slot: AuthSlotView): string {
+  if (slot.enabled === false) return `未接入。${slot.capture} 抓包里搜 ${slot.search}`;
+  if (slot.ok == null) return "还没有拉取记录";
+  const when = formatCheckedAt(slot.at) ?? "最近";
+  return slot.ok ? `${when} 拉取成功` : `${when} 失败：${slot.error ?? failureLabel(slot)}`;
+}
+
+function notConnectedHint(slots: AuthSlotView[]): string {
+  const off = slots.filter((slot) => slot.enabled === false).map((slot) => slot.label);
+  if (off.length === 0) return "所有接口都已接入。";
+  return `未接入：${off.join("、")}。要接入就点它，鼠标停在按钮上可看在哪里抓包。`;
+}
+
+function backupNote(members: AuthSlotView[]): string | null {
+  const working = members.find((slot) => slot.enabled !== false && slot.ok === true);
+  if (members.length < 2 || !working) return null;
+  return `看板不受影响：车况数据正在由「${MEMBER_LABELS[working.id] ?? working.label}」提供。`;
 }
 
 function formatCheckedAt(at: number | null | undefined): string | null {
@@ -81,7 +142,7 @@ const EMPTY_SLOTS: AuthSlotView[] = AUTH_SLOTS.map((slot) => ({
 }));
 
 function failureLabel(slot: AuthSlotView): string | null {
-  if (slot.ok !== false) return null;
+  if (slot.enabled === false || slot.ok !== false) return null;
   if (slot.kind === "sign") return "签名失效";
   if (slot.kind === "auth") return "登录失效";
   return "拉取失败";
@@ -116,8 +177,10 @@ export function QuickAuthPanel({ onDone }: Props) {
     void loadSlots().catch(() => setError("读不到接口状态"));
   }, []);
 
-  const selected = slots.find((slot) => slot.id === selectedId) ?? slots[0];
-  const failed = failureLabel(selected);
+  const selected = slots.find((slot) => slot.id === groupOf(selectedId)) ?? slots[0];
+  const members = selected ? membersOf(selected.id, slots) : [];
+  const mark = groupMark(members);
+  const firstFailed = members.find((slot) => slot.enabled !== false && failureLabel(slot));
 
   const submitFields = async () => {
     if (!selected) return;
@@ -144,6 +207,31 @@ export function QuickAuthPanel({ onDone }: Props) {
       setLines(next);
       setUrl("");
       setToken("");
+      await onDone?.();
+      await loadSlots();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法连接本地服务");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disableSlot = async (slot: AuthSlotView) => {
+    setBusy(true);
+    setError(null);
+    setLines([]);
+    try {
+      const res = await fetch("/api/auth-slots/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot: slot.id }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        setError(body.error ?? `停用失败 (${res.status})`);
+        return;
+      }
+      setLines([`已停用「${MEMBER_LABELS[slot.id] ?? slot.label}」，以后不再拉取。要恢复时把完整地址贴回来即可`]);
       await onDone?.();
       await loadSlots();
     } catch (err) {
@@ -189,30 +277,33 @@ export function QuickAuthPanel({ onDone }: Props) {
 
   return (
     <div className="sync-hub-panel-body quick-auth-panel">
-      <p className="muted">点中失效的那条。上面是要找的地址，下面填 Bearer Token。</p>
+      <p className="muted">标黄的是失效的接口，虚线的是还没接入的。点它，把抓到的内容贴进来。</p>
       <div className="auth-slot-list" role="tablist" aria-label="要更新的接口">
-        {slots.map((slot) => {
-          const mark = failureLabel(slot);
-          const active = slot.id === selected?.id;
-          return (
-            <button
-              key={slot.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`auth-slot-chip${active ? " active" : ""}${mark ? " failed" : ""}`}
-              onClick={() => {
-                picked.current = true;
-                setSelectedId(slot.id);
-                setUrl("");
-                setError(null);
-              }}
-            >
-              {slot.label}
-              {mark ? <span className="auth-slot-mark">{mark}</span> : null}
-            </button>
-          );
-        })}
+        {slots
+          .filter((slot) => !GROUPED_IDS.has(slot.id))
+          .map((slot) => {
+            const chipMark = groupMark(membersOf(slot.id, slots));
+            const active = slot.id === selected?.id;
+            return (
+              <button
+                key={slot.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                title={`${slot.capture} 抓包里搜 ${slot.search}`}
+                className={`auth-slot-chip${active ? " active" : ""}${chipMark ? ` ${chipMark.tone}` : ""}`}
+                onClick={() => {
+                  picked.current = true;
+                  setSelectedId(slot.id);
+                  setUrl("");
+                  setError(null);
+                }}
+              >
+                {slot.label}
+                {chipMark ? <span className="auth-slot-mark">{chipMark.text}</span> : null}
+              </button>
+            );
+          })}
       </div>
 
       {selected && (
@@ -223,18 +314,33 @@ export function QuickAuthPanel({ onDone }: Props) {
             void submitFields();
           }}
         >
-          <p className="auth-slot-prompt">
-            {failed ? `${selected.label} · ${failed}` : selected.label}
-          </p>
-          <p className={`auth-slot-status${failed ? " failed" : ""}`}>
-            {selected.ok == null
-              ? "还没有拉取记录"
-              : `${formatCheckedAt(selected.at) ?? "最近"} ${selected.ok ? "拉取成功" : `失败：${selected.error ?? failed}`}`}
-          </p>
-          <p className="auth-slot-address">
-            <span>{selected.method}</span>
-            <code>{selected.address}</code>
-          </p>
+          <p className="auth-slot-prompt">{mark ? `${selected.label} · ${mark.text}` : selected.label}</p>
+          {members.map((member) => (
+            <div className="auth-slot-source" key={member.id}>
+              {members.length > 1 && <p className="auth-slot-source-name">{MEMBER_LABELS[member.id] ?? member.label}</p>}
+              <p className="auth-slot-address">
+                <span>{member.method}</span>
+                <code>{member.address}</code>
+              </p>
+              <div className="auth-slot-source-row">
+                <p className={`auth-slot-status${failureLabel(member) ? " failed" : ""}`}>{memberStatus(member)}</p>
+                {member.optional && member.enabled !== false && (
+                  <button
+                    type="button"
+                    className="btn ghost btn-small"
+                    disabled={busy}
+                    title="清掉这条的地址，以后不再拉取；顶部状态不再因为它变黄"
+                    onClick={() => void disableSlot(member)}
+                  >
+                    不用这条
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {firstFailed && <p className="auth-slot-status">{whatToPaste(firstFailed)}</p>}
+          {firstFailed && backupNote(members) && <p className="auth-slot-status">{backupNote(members)}</p>}
+          <p className="auth-slot-guide">{notConnectedHint(slots)}</p>
           <label className="auth-slot-field">
             <span>完整地址</span>
             <textarea
@@ -242,7 +348,9 @@ export function QuickAuthPanel({ onDone }: Props) {
               value={url}
               disabled={busy}
               placeholder={
-                selected.needsUrl
+                members.length > 1
+                  ? "贴 widget/info 或 rvs/vehicle/…/status 的完整 URL，会自动识别是哪一条"
+                  : selected.needsUrl
                   ? "把抓到的这一条完整 URL 贴在这里"
                   : "这条不用换地址。只有抓包里顺手复制到了，才贴在这里"
               }

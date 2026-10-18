@@ -187,6 +187,8 @@ final class NativeBackend: @unchecked Sendable {
             return try await storageFilesResponse()
         case ("/api/auth-slots", "GET"):
             return try .json(await authSlots())
+        case ("/api/auth-slots/disable", "POST"):
+            return try await disableAuthSlot(body: request.body)
         case ("/api/quick-auth", "POST"):
             return try await quickAuth(body: request.body)
         case ("/api/vehicle-photos", "GET"):
@@ -305,9 +307,12 @@ final class NativeBackend: @unchecked Sendable {
         guard let object = try decodeObject(body) else {
             return try .json(.object(["ok": .bool(false), "error": .string("invalid_body")]), status: 400)
         }
+        let current = try await storage.environment(includingSecrets: true)
         var changes: [String: String] = [:]
         for (key, value) in object {
             guard let text = value as? String else { continue }
+            let hiddenFromForm = current[key].map { $0.contains("sign=") || $0.contains("token=") } ?? false
+            if text.isEmpty && hiddenFromForm { continue }
             if !AppStorage.secretKeys.contains(key) || !text.isEmpty {
                 changes[key] = text
             }
@@ -482,19 +487,66 @@ final class NativeBackend: @unchecked Sendable {
         ]))
     }
 
+    private static let optionalSlotKeys: [String: [String]] = [
+        "status": ["NIO_VEHICLE_STATUS_URL"],
+    ]
+
+    private static func slotEnabled(_ id: String, env: [String: String]) -> Bool {
+        let hasVehicleID = env["NIO_VEHICLE_ID"]?.isEmpty == false
+        switch id {
+        case "widget":
+            return (hasVehicleID && env["NIO_VEHICLE_DEVICE_ID"]?.isEmpty == false)
+                || (try? SyncCoordinator.vehicleWidgetURL(env)) != nil
+        case "journey":
+            return hasVehicleID || env["NIO_JOURNEY_API_URL"]?.isEmpty == false
+        case "daily":
+            return hasVehicleID || env["NIO_DAILY_API_URL"]?.isEmpty == false
+        default:
+            guard let keys = optionalSlotKeys[id] else { return true }
+            return keys.contains { env[$0]?.isEmpty == false }
+        }
+    }
+
+    private func disableAuthSlot(body: Data?) async throws -> HTTPBridgeResponse {
+        guard let id = try decodeObject(body)?["slot"] as? String, let keys = Self.optionalSlotKeys[id] else {
+            return try .json(.object(["ok": .bool(false), "error": .string("这条接口不能停用")]), status: 400)
+        }
+        let env = try await storage.environment(includingSecrets: true)
+        let recorded = (try? await storage.readJSON(relativePath: "auth-slots.json"))?.object ?? [:]
+        if let partner = ["widget": "status", "status": "widget"][id] {
+            let partnerOK = Self.slotEnabled(partner, env: env) && recorded[partner]?.object?["ok"] == .bool(true)
+            if !partnerOK {
+                let name = partner == "status" ? "车况整包" : "车辆状态"
+                return try .json(.object([
+                    "ok": .bool(false),
+                    "error": .string("\(name)目前也不可用，两条都停用后车况将不再更新。请先让\(name)拉取成功"),
+                ]), status: 409)
+            }
+        }
+        try await storage.updateEnvironment(Dictionary(uniqueKeysWithValues: keys.map { ($0, "") }))
+        var slots = recorded
+        slots[id] = nil
+        try await storage.writeJSON(.object(slots), relativePath: "auth-slots.json")
+        try? await sync.refresh(.vehicle)
+        emit("dashboard.updated", .object(["target": .string("config")]))
+        return try .json(.object(["ok": .bool(true)]))
+    }
+
     private func authSlots() async -> JSONValue {
         let env = (try? await storage.environment(includingSecrets: true)) ?? [:]
         let secretState = await storage.secretConfigurationState()
         let recorded = (try? await storage.readJSON(relativePath: "auth-slots.json"))?.object ?? [:]
         let definitions: [(id: String, label: String, method: String, address: String, needsURL: Bool, urlKey: String, tokenKey: String)] = [
-            ("widget", "车辆状态", "GET", "https://app.nio.com/app/api/icar/v2/widget/info", true,
-             "NIO_VEHICLE_API_URL", "NIO_VEHICLE_ACCESS_TOKEN"),
+            ("widget", "车辆状态", "GET", "https://gateway-front-external.nio.com/moat/10086/app/api/icar/v2/widget/info",
+             false, "NIO_VEHICLE_ID", "NIO_VEHICLE_ACCESS_TOKEN"),
             ("status", "车况整包", "GET", "https://icar.nio.com/api/2/rvs/vehicle/{vehicle_id}/status", true,
              "NIO_VEHICLE_STATUS_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
-            ("journey", "最近行程", "GET", "https://icar.nio.com/api/1/vehicle/journey_merge/status", true,
-             "NIO_JOURNEY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
-            ("daily", "当日里程", "GET", "https://icar.nio.com/api/1/vehicle/journeys/daily_data", true,
-             "NIO_DAILY_API_URL", "NIO_VEHICLE_EXTRA_TOKEN"),
+            ("journey", "最近行程", "GET",
+             "https://gateway-front-external.nio.com/moat/1100461/api/1/vehicle/journey_merge/status", false,
+             "NIO_VEHICLE_ID", "NIO_VEHICLE_EXTRA_TOKEN"),
+            ("daily", "当日里程", "GET",
+             "https://gateway-front-external.nio.com/moat/1100461/api/1/vehicle/{vehicle_id}/journey_merge/timing_journeys",
+             false, "NIO_VEHICLE_ID", "NIO_VEHICLE_EXTRA_TOKEN"),
             ("change", "换电订单", "POST",
              "https://gateway-front-external.nio.com/moat/1100367/api/v1/otd/car/ext/general/serviceOrder/getTabOrder",
              false, "NIO_CHANGE_API_URL", "NIO_CHANGE_ACCESS_TOKEN"),
@@ -504,15 +556,16 @@ final class NativeBackend: @unchecked Sendable {
         return .object([
             "ok": .bool(true),
             "slots": .array(definitions.map { slot in
-                let optional: Set = ["status", "journey", "daily"]
-                let unset = optional.contains(slot.id) && env[slot.urlKey]?.isEmpty != false
-                let status = unset ? [:] : recorded[slot.id]?.object ?? [:]
+                let enabled = Self.slotEnabled(slot.id, env: env)
+                let status = enabled ? recorded[slot.id]?.object ?? [:] : [:]
                 return .object([
                     "id": .string(slot.id),
                     "label": .string(slot.label),
                     "method": .string(slot.method),
                     "address": .string(slot.address),
                     "needsUrl": .bool(slot.needsURL),
+                    "enabled": .bool(enabled),
+                    "optional": .bool(Self.optionalSlotKeys[slot.id] != nil),
                     "configured": .bool(env[slot.urlKey]?.isEmpty == false && secretState[slot.tokenKey] == true),
                     "ok": status["ok"] ?? .null,
                     "kind": status["kind"] ?? .null,

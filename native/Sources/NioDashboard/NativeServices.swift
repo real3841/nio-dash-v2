@@ -217,18 +217,8 @@ actor SyncCoordinator {
         var widgetPayload: JSONValue?
         var widgetError: (any Error)?
         do {
-            if let url = try Self.vehicleWidgetURL(env) {
-                let payload = try await requestJSON(
-                    url,
-                    method: first(env, ["NIO_VEHICLE_API_METHOD", "NIO_API_METHOD"]) ?? "GET",
-                    token: first(env, ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_ACCESS_TOKEN"]),
-                    body: nil,
-                    extraHeaders: headers
-                )
-                try Self.requireSuccess(payload, accepted: ["success"])
-                widgetPayload = payload
-                await recordSlot("widget", nil)
-            }
+            widgetPayload = try await fetchWidget(env: env, headers: headers)
+            if widgetPayload != nil { await recordSlot("widget", nil) }
         } catch {
             widgetError = error
             await recordSlot("widget", error)
@@ -263,18 +253,12 @@ actor SyncCoordinator {
         var failedParts: [String] = []
         if widgetError != nil { failedParts.append("车辆状态") }
         if statusError != nil { failedParts.append("车况整包") }
-        for (slot, label, urlKey, output) in [
-            ("journey", "最近行程", "NIO_JOURNEY_API_URL", "journey.json"),
-            ("daily", "当日里程", "NIO_DAILY_API_URL", "daily.json"),
-        ] {
-            guard let url = env[urlKey], !url.isEmpty else { continue }
+        for (slot, label, output) in [("journey", "最近行程", "journey.json"), ("daily", "当日里程", "daily.json")] {
             do {
-                let extra = try await requestJSON(
-                    url,
-                    method: "GET",
-                    token: first(env, ["NIO_VEHICLE_EXTRA_TOKEN", "NIO_VEHICLE_ACCESS_TOKEN"]),
-                    body: nil
-                )
+                let fetched = slot == "journey"
+                    ? try await fetchJourney(env: env, token: extraToken)
+                    : try await fetchDaily(env: env, token: extraToken)
+                guard let extra = fetched else { continue }
                 await recordSlot(slot, nil)
                 let envelope = extraFileEnvelope(output: output, payload: extra)
                 try await storage.writeJSON(envelope, relativePath: output)
@@ -290,6 +274,136 @@ actor SyncCoordinator {
             ok: true,
             warning: failedParts.isEmpty ? nil : "\(failedParts.joined(separator: "、"))失效，其余数据正常"
         )
+    }
+
+    private static let gatewayUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 "
+        + "(KHTML, like Gecko) Mobile/15E148 NIOAppCN/6.9.0 (com.do1.WeiLaiApp; build:2672; OS:iOS) webview/lg _dsbridge"
+
+    /// 蔚来 H5 用的代签网关：只要 Bearer，不需要抓包签名
+    static func gatewayURL(appID: String, path: String, query: [(String, String)], env: [String: String]) -> String {
+        let tokenAppID = env["NIO_TOKEN_APP_ID"].flatMap { $0.isEmpty ? nil : $0 } ?? "10002"
+        var components = URLComponents(string: "https://gateway-front-external.nio.com/moat/\(appID)\(path)")!
+        let common = [
+            ("origin_app_id", tokenAppID), ("token_app_id", tokenAppID),
+            ("language", "zh-Hans"), ("lang", "zh-Hans"), ("hash_type", "sha256"), ("app_ver", "6.9.0"),
+        ]
+        components.queryItems = (common + query).map { URLQueryItem(name: $0.0, value: $0.1) }
+        return components.url!.absoluteString
+    }
+
+    private func gatewayJSON(
+        _ env: [String: String],
+        token: String?,
+        appID: String,
+        path: String,
+        query: [(String, String)] = []
+    ) async throws -> JSONValue {
+        guard let token, !token.isEmpty else { throw NioAPIError(kind: .auth, message: "缺少 Bearer Token") }
+        let payload = try await requestJSON(
+            Self.gatewayURL(appID: appID, path: path, query: query, env: env),
+            method: "GET",
+            token: token,
+            body: nil,
+            extraHeaders: [
+                "User-Agent": Self.gatewayUserAgent,
+                "x-request-brand": "nio",
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "null",
+            ]
+        )
+        try Self.requireSuccess(payload, accepted: ["success"])
+        return payload
+    }
+
+    /// 先走免签名网关；网关不通且配了抓包地址时退回签名请求
+    private func fetchWidget(env: [String: String], headers: [String: String]) async throws -> JSONValue? {
+        let token = first(env, ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_ACCESS_TOKEN"])
+        var gatewayError: (any Error)?
+        if let vehicleID = first(env, ["NIO_VEHICLE_ID", "NIO_ID"]),
+           let deviceID = first(env, ["NIO_VEHICLE_DEVICE_ID", "NIO_DEVICE_ID"]) {
+            do {
+                return try await gatewayJSON(env, token: token, appID: "10086", path: "/app/api/icar/v2/widget/info", query: [
+                    ("region", first(env, ["NIO_VEHICLE_REGION"]) ?? "cn"),
+                    ("vehicle_id", vehicleID),
+                    ("device_id", deviceID),
+                    ("widget_functions", first(env, ["NIO_VEHICLE_WIDGET_FUNCTIONS"])
+                        ?? "rvs_run_frequent_appointment,rvs_set_defender_mode,rvs_rpa_out,rvs_exe_findme"),
+                    ("widget_size", first(env, ["NIO_VEHICLE_WIDGET_SIZE"]) ?? "medium"),
+                ])
+            } catch {
+                gatewayError = error
+            }
+        }
+        let signedURL: String?
+        do {
+            signedURL = try Self.vehicleWidgetURL(env)
+        } catch {
+            throw gatewayError ?? error
+        }
+        guard let signedURL else {
+            if let gatewayError { throw gatewayError }
+            return nil
+        }
+        do {
+            let payload = try await requestJSON(
+                signedURL,
+                method: first(env, ["NIO_VEHICLE_API_METHOD", "NIO_API_METHOD"]) ?? "GET",
+                token: token,
+                body: nil,
+                extraHeaders: headers
+            )
+            try Self.requireSuccess(payload, accepted: ["success"])
+            return payload
+        } catch {
+            throw gatewayError ?? error
+        }
+    }
+
+    private func fetchJourney(env: [String: String], token: String?) async throws -> JSONValue? {
+        if let vehicleID = first(env, ["NIO_VEHICLE_ID", "NIO_ID"]) {
+            do {
+                return try await gatewayJSON(env, token: token, appID: "1100461",
+                                             path: "/api/1/vehicle/journey_merge/status", query: [("vehicle_id", vehicleID)])
+            } catch {
+                guard let url = env["NIO_JOURNEY_API_URL"], !url.isEmpty else { throw error }
+            }
+        }
+        guard let url = env["NIO_JOURNEY_API_URL"], !url.isEmpty else { return nil }
+        return try await requestJSON(url, method: "GET", token: token, body: nil)
+    }
+
+    /// 网关不代理 daily_data，用今天结束的行程累加里程代替
+    private func fetchDaily(env: [String: String], token: String?) async throws -> JSONValue? {
+        if let url = env["NIO_DAILY_API_URL"], !url.isEmpty,
+           let payload = try? await requestJSON(url, method: "GET", token: token, body: nil) {
+            return payload
+        }
+        guard let vehicleID = first(env, ["NIO_VEHICLE_ID", "NIO_ID"]) else { return nil }
+        let journeys = try await gatewayJSON(
+            env,
+            token: token,
+            appID: "1100461",
+            path: "/api/1/vehicle/\(vehicleID)/journey_merge/timing_journeys",
+            query: [
+                ("query_time", String(Int(Date().timeIntervalSince1970))),
+                ("query_order", "-1"),
+                ("count", "30"),
+                ("skip_switch_check", "true"),
+            ]
+        )
+        let midnight = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
+        return .object(["data": .object(["daily_mileage": .number(Self.dailyMileage(fromJourneys: journeys, since: midnight))])])
+    }
+
+    static func dailyMileage(fromJourneys payload: JSONValue, since midnight: Double) -> Double {
+        guard case let .array(trips)? = payload.object?["data"]?.object?["detail"] else { return 0 }
+        let total = trips.reduce(0.0) { sum, trip in
+            guard let object = trip.object,
+                  let end = object["end_time"]?.number,
+                  (end > 10_000_000_000 ? end / 1_000 : end) >= midnight else { return sum }
+            return sum + (object["trip_odometer"]?.number ?? 0)
+        }
+        return (total * 10).rounded() / 10
     }
 
     /// nil 表示没配车辆状态接口；抛错表示配了但拼不出可用的请求

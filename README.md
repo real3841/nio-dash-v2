@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native" src="https://img.shields.io/badge/native-2.1.3-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.4-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -47,7 +47,7 @@
 - Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件，并从钥匙串删除。系统此时可能弹窗请求访问钥匙串，选「始终允许」即可；选「拒绝」的项会被跳过（之后在「更新 Token」中重新填写），以后不会再弹窗。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.3`。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.4`。
 
 ### 车辆看板卡片
 
@@ -70,7 +70,7 @@
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.3.app`）。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.4.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.3`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.4`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -238,7 +238,7 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | 隐藏卡片 | 卡片右上角眼睛图标 |
 | 查看 RVS JSON | 车辆卡片右上角 `{ }` |
 | 查看站点证书 | 家充桩卡片「站点证书」 |
-| 更新 Token | 数据同步 →「更新 Token」，点中标为失效的接口，粘贴完整地址或 Bearer，也可选 HAR。更新后立即重拉相关接口；HAR 里的家充月统计会写入本地 |
+| 更新 Token | 数据同步 →「更新 Token」，点中标为失效的接口。车辆状态、最近行程、当日里程走免签名网关，只需粘贴 Bearer；车况整包（含轮胎）需粘贴带签名的完整地址。也可选 HAR。更新后立即重拉相关接口；HAR 里的家充月统计会写入本地 |
 | 批量管理 | 数据同步 → 卡片管理（默认折叠） |
 | 恢复默认 | 卡片管理内「恢复默认」 |
 
@@ -301,6 +301,16 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `npm run serve:api` | 仅 API 服务 |
 
 ## 更新日志
+
+### v2.1.4
+
+- **车况、行程、当日里程免签名**：「车辆状态」（widget）、「最近行程」和「当日里程」改走蔚来免签名网关，只要 Bearer Token 有效就能拉取，不用再每天抓带签名的地址。当日里程按今天已结束的行程累加。旧的签名地址仍保留为备用
+- **只剩车况整包需要签名**：轮胎等数据只有「车况整包」（icar rvs status）提供，签名过期后仍需在「更新 Token → 车辆状态」重新粘贴完整地址
+- **「更新 Token」更好懂**：车辆状态下同时列出小组件接口和车况整包，各自显示地址、状态和要贴什么（只贴 Token，还是贴带签名的完整地址）；中间显示哪些接口还没接入。不需要的车况整包可点「不用这条」停用（另一条正常时才可停用）
+- **大看板不再自己消失**：打开大看板时应用会出现在 Dock 和 ⌘Tab 中，被其他窗口盖住也能切回；关闭大看板后恢复为只在菜单栏。只有小看板在失去焦点时收起
+- **修复车辆 API 显示横线**：已拉取过数据、但地址被隐藏的接口不再误显示为「未配置」
+- **修复保存配置清空签名地址**：在「数据同步」里保存其他设置时，不再把已保存的签名地址清空
+- **新增窗口菜单**：支持 ⌘M 最小化、⌘W 关闭、⌘H 隐藏、⌘Q 退出
 
 ### v2.1.3
 
