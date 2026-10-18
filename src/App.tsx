@@ -799,11 +799,11 @@ export default function App() {
             lng: currentWgs.lng,
             ts: posTs,
           }}
-        />
-      </Suspense>
-
-      <Suspense fallback={<section className="panel muted">历史轨迹加载中…</section>}>
-        <HistoryTrackMap />
+        >
+          <Suspense fallback={<p className="muted">历史轨迹加载中…</p>}>
+            <HistoryTrackMap embedded />
+          </Suspense>
+        </DailyPathMap>
       </Suspense>
 
       {changeData && <SwapHistory data={changeData} />}

@@ -235,6 +235,8 @@ interface DailyPathMapProps {
   history: VehicleSnapshot[];
   journeys?: JourneyHistoryItem[];
   current?: { lat: number; lng: number; ts: number } | null;
+  /** 折叠区里追加的内容（历史轨迹等） */
+  children?: React.ReactNode;
 }
 
 function formatDistance(km: number): string {
@@ -274,7 +276,7 @@ function TripSummary({ trip }: { trip: DrivingTrip }) {
   );
 }
 
-export function DailyPathMap({ history, journeys, current }: DailyPathMapProps) {
+export function DailyPathMap({ history, journeys, current, children }: DailyPathMapProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null);
   const [hoverTripIndex, setHoverTripIndex] = useState<number | null>(null);
@@ -373,7 +375,7 @@ export function DailyPathMap({ history, journeys, current }: DailyPathMapProps) 
       }}
     >
       <summary>
-        <span>每日行驶路径</span>
+        <span>行驶路径与历史轨迹</span>
         <span className="drawer-summary-meta">{summaryMeta}</span>
       </summary>
 
@@ -453,6 +455,8 @@ export function DailyPathMap({ history, journeys, current }: DailyPathMapProps) 
           )}
         </>
       )}
+
+      {open && children}
     </details>
   );
 }

@@ -49,13 +49,20 @@ interface TrackSyncStatus {
   finishedAt: number | null;
 }
 
-/** 深色底图：Esri 的 Dark Gray，不需要 Key，用作可选的观感方案 */
+/** 深色底图：Esri 的 Dark Gray，不需要 Key。subdomains 必须给，否则 Leaflet 取子域时会崩 */
 const DARK_TILES: MapTileConfig = {
   provider: "osm",
   url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
   attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+  subdomains: ["a"],
   maxZoom: 16,
 };
+
+/** 高德底图是浅色，粉色压不住，改用青色 */
+const COLOR_DARK = "#ff5ec8";
+const COLOR_DOT_DARK = "#ff8ada";
+const COLOR_LIGHT = "#0091b3";
+const COLOR_DOT_LIGHT = "#00b8d4";
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
@@ -80,6 +87,9 @@ function TrackLayer({
 }) {
   const map = useMap();
   const fitted = useRef<string>("");
+  const isLight = tileConfig.provider === "amap";
+  const lineColor = isLight ? COLOR_LIGHT : COLOR_DARK;
+  const dotColor = isLight ? COLOR_DOT_LIGHT : COLOR_DOT_DARK;
 
   useEffect(() => {
     const renderer = L.canvas({ padding: 0.3 });
@@ -90,7 +100,6 @@ function TrackLayer({
       if (trip.p.length < 2) continue;
       const latlngs: [number, number][] = [];
       for (const p of trip.p) {
-        // 高德底图用 GCJ-02 原始坐标；OSM / Esri 需要 WGS-84
         const mapped = mapCoordsForProvider(p[1], p[0], tileConfig.provider);
         latlngs.push([mapped.lat, mapped.lng]);
       }
@@ -98,9 +107,9 @@ function TrackLayer({
       if (mode === "line") {
         L.polyline(latlngs, {
           renderer,
-          color: "#ff5ec8",
-          weight: 1.2,
-          opacity: 0.45,
+          color: lineColor,
+          weight: 2,
+          opacity: isLight ? 0.75 : 0.5,
           interactive: false,
         }).addTo(group);
       } else {
@@ -108,10 +117,10 @@ function TrackLayer({
         for (let i = 0; i < latlngs.length; i += step) {
           L.circleMarker(latlngs[i], {
             renderer,
-            radius: 1.1,
+            radius: 1.4,
             stroke: false,
-            fillColor: "#ff8ada",
-            fillOpacity: 0.6,
+            fillColor: dotColor,
+            fillOpacity: isLight ? 0.8 : 0.6,
             interactive: false,
           }).addTo(group);
         }
@@ -132,13 +141,15 @@ function TrackLayer({
     return () => {
       map.removeLayer(group);
     };
-  }, [map, trips, mode, tileConfig.provider, boundsKey]);
+  }, [map, trips, mode, tileConfig.provider, boundsKey, isLight, lineColor, dotColor]);
 
   return null;
 }
 
-export function HistoryTrackMap() {
-  const [open, setOpen] = useState(false);
+export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
+  const [openState, setOpenState] = useState(false);
+  const open = embedded || openState;
+
   const [index, setIndex] = useState<TrackIndex | null>(null);
   const [months, setMonths] = useState<Record<string, TrackTrip[]>>({});
   const [active, setActive] = useState<Set<string>>(new Set());
@@ -204,7 +215,7 @@ export function HistoryTrackMap() {
           });
         }
       } catch {
-        // 轮询失败忽略，下一轮重试
+        // 忽略，下一轮重试
       }
       if (!cancelled) timer = window.setTimeout(poll, 2500);
     };
@@ -215,19 +226,6 @@ export function HistoryTrackMap() {
       window.clearTimeout(timer);
     };
   }, [open]);
-
-  const startSync = async (months: number) => {
-    try {
-      const res = await fetch("/api/tracks/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ months, refreshCurrent: true }),
-      });
-      if (res.ok) setSyncStatus((await res.json()) as TrackSyncStatus);
-    } catch {
-      // 忽略，状态轮询会把结果带回来
-    }
-  };
 
   useEffect(() => {
     if (!open) return;
@@ -240,6 +238,19 @@ export function HistoryTrackMap() {
       })();
     }
   }, [open, active, months]);
+
+  const startSync = async (monthCount: number) => {
+    try {
+      const res = await fetch("/api/tracks/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ months: monthCount, refreshCurrent: true }),
+      });
+      if (res.ok) setSyncStatus((await res.json()) as TrackSyncStatus);
+    } catch {
+      // 忽略
+    }
+  };
 
   const trips = useMemo(() => {
     const out: TrackTrip[] = [];
@@ -256,13 +267,6 @@ export function HistoryTrackMap() {
     }
     return { km, points };
   }, [trips]);
-
-  const summaryMeta =
-    status === "empty"
-      ? "暂无数据"
-      : index
-        ? `${active.size} 个月 · ${trips.length} 趟 · ${shown.km.toFixed(0)} km`
-        : "读取中…";
 
   const boundsKey = useMemo(() => [...active].sort().join(","), [active]);
 
@@ -282,33 +286,27 @@ export function HistoryTrackMap() {
     border: 0,
     color: on ? "#e8ecf4" : "#8b93a7",
     borderRadius: 7,
-    padding: "5px 14px",
+    padding: "5px 12px",
     fontSize: 11,
     cursor: "pointer",
   });
 
-  return (
-    <details
-      className="trend-drawer"
-      open={open}
-      onToggle={(e) => {
-        const next = (e.currentTarget as HTMLDetailsElement).open;
-        setOpen(next);
-        saveDrawerOpen(TRACK_DRAWER_KEY, next);
-      }}
-    >
-      <summary>
-        <span>历史轨迹</span>
-        <span className="drawer-summary-meta">{summaryMeta}</span>
-      </summary>
+  const syncing = Boolean(syncStatus?.running);
 
-      {open && status === "empty" && (
-        <div className="muted" style={{ padding: "12px 0" }}>
+  const body = (
+    <>
+      {status === "empty" && (
+        <div className="muted" style={{ padding: "10px 0" }}>
           <p style={{ margin: "0 0 10px" }}>还没有轨迹数据。</p>
           {isNativeApp() ? (
-            <button type="button" onClick={() => void startSync(24)} style={segStyle(false)}>
-              开始抓取历史轨迹
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => void startSync(1)} style={segStyle(false)}>
+                抓取当月
+              </button>
+              <button type="button" onClick={() => void startSync(60)} style={segStyle(false)}>
+                补全全部历史
+              </button>
+            </div>
           ) : (
             <p style={{ margin: 0 }}>
               在项目目录运行 <code>npm run tracks:fetch</code> 抓取后重新打开。
@@ -317,27 +315,41 @@ export function HistoryTrackMap() {
         </div>
       )}
 
-      {open && status === "loading" && <p className="muted">读取轨迹索引…</p>}
+      {status === "loading" && <p className="muted">读取轨迹索引…</p>}
 
-      {open && index && (
+      {index && (
         <>
-          {isNativeApp() && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0 0" }}>
-              <button
-                type="button"
-                onClick={() => void startSync(24)}
-                disabled={syncStatus?.running}
-                style={{ ...segStyle(false), opacity: syncStatus?.running ? 0.5 : 1 }}
-              >
-                {syncStatus?.running ? "抓取中…" : "同步"}
-              </button>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "10px 0 0" }}>
+            {isNativeApp() ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void startSync(1)}
+                  disabled={syncing}
+                  style={{ ...segStyle(false), opacity: syncing ? 0.5 : 1 }}
+                >
+                  {syncing ? "抓取中…" : "刷新当月"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void startSync(60)}
+                  disabled={syncing}
+                  style={{ ...segStyle(false), opacity: syncing ? 0.5 : 1 }}
+                >
+                  补全历史
+                </button>
+              </>
+            ) : (
               <span className="muted" style={{ fontSize: 11 }}>
-                {syncStatus?.running
-                  ? `${syncStatus.month ?? ""} · ${syncStatus.done}/${syncStatus.total}`
-                  : (syncStatus?.lastError ?? "")}
+                用 <code>npm run tracks:fetch -- --months 60</code> 补全历史
               </span>
-            </div>
-          )}
+            )}
+            <span className="muted" style={{ fontSize: 11 }}>
+              {syncing
+                ? `${syncStatus?.month ?? ""} · ${syncStatus?.done}/${syncStatus?.total}`
+                : (syncStatus?.lastError ?? "")}
+            </span>
+          </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0" }}>
             {index.months.map((m) => (
@@ -360,19 +372,14 @@ export function HistoryTrackMap() {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
             <button type="button" onClick={() => setMode("line")} style={segStyle(mode === "line")}>
               轨迹线
             </button>
             <button type="button" onClick={() => setMode("dot")} style={segStyle(mode === "dot")}>
               点云
             </button>
-            <button
-              type="button"
-              onClick={() => setUseDark((v) => !v)}
-              style={{ ...segStyle(useDark), marginLeft: 8 }}
-              title="深色底图（Esri），不使用高德 Key"
-            >
+            <button type="button" onClick={() => setUseDark((v) => !v)} style={{ ...segStyle(useDark), marginLeft: 8 }}>
               深色
             </button>
             <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
@@ -393,7 +400,7 @@ export function HistoryTrackMap() {
                 url={tileConfig.url}
                 attribution={tileConfig.attribution}
                 maxZoom={tileConfig.maxZoom}
-                subdomains={tileConfig.subdomains}
+                subdomains={tileConfig.subdomains ?? ["a"]}
               />
               <TrackLayer
                 trips={trips}
@@ -405,6 +412,28 @@ export function HistoryTrackMap() {
           </div>
         </>
       )}
+    </>
+  );
+
+  if (embedded) return <div style={{ marginTop: 16, borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 12 }}>{body}</div>;
+
+  return (
+    <details
+      className="trend-drawer"
+      open={openState}
+      onToggle={(e) => {
+        const next = (e.currentTarget as HTMLDetailsElement).open;
+        setOpenState(next);
+        saveDrawerOpen(TRACK_DRAWER_KEY, next);
+      }}
+    >
+      <summary>
+        <span>历史轨迹</span>
+        <span className="drawer-summary-meta">
+          {status === "empty" ? "暂无数据" : index ? `${active.size} 个月 · ${trips.length} 趟` : "读取中…"}
+        </span>
+      </summary>
+      {openState && body}
     </details>
   );
 }
