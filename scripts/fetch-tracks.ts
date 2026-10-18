@@ -33,6 +33,8 @@ const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 const MONTHS = Number(arg("months", "6"));
 const DELAY_MS = Number(arg("delay", "1100"));
 const FORCE = flag("force");
+/** 最早补到哪个月（含），例如 --from 2025-06 */
+const FROM = arg("from");
 const ENV_FILE = arg("env");
 const OUT_ARG = arg("out");
 
@@ -204,7 +206,8 @@ async function fetchMonth(month: string, lastMonth = ""): Promise<{ lastMonth: s
   if (!FORCE && fs.existsSync(file)) {
     const cached = JSON.parse(fs.readFileSync(file, "utf8")) as { trips?: unknown[] };
     console.log(`  ${month} 已存在（${cached.trips?.length ?? 0} 趟），跳过`);
-    return { lastMonth: lastMonth, trips: cached.trips?.length ?? 0 };
+    // 命中缓存时 last_month 为空会中断补全，按下个月历往前推
+    return { lastMonth: lastMonth || prevMonth(month), trips: cached.trips?.length ?? 0 };
   }
 
   const list = await getJson<{ data?: { detail?: MonthJourneyItem[]; last_month?: string } }>(
@@ -275,6 +278,12 @@ function rebuildIndex(): void {
   );
 }
 
+function prevMonth(month: string): string {
+  const [year, mon] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, mon - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 async function main(): Promise<void> {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
@@ -293,6 +302,10 @@ async function main(): Promise<void> {
     lastMonth = result.lastMonth;
     if (!lastMonth) {
       console.log("  已到最早月份");
+      break;
+    }
+    if (FROM && month <= FROM) {
+      console.log(`  已到指定起点 ${FROM}`);
       break;
     }
     month = lastMonth;
