@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-111827">
   <img alt="Stable" src="https://img.shields.io/badge/stable-1.10.0-16a34a">
-  <img alt="Native" src="https://img.shields.io/badge/native-2.1.4-2563EB">
+  <img alt="Native" src="https://img.shields.io/badge/native-2.1.5-2563EB">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-AppKit-F05138">
   <img alt="WebView" src="https://img.shields.io/badge/UI-WKWebView-0A84FF">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB">
@@ -47,7 +47,7 @@
 - Token、Cookie 与服务密钥保存在本机 `config.env`，文件权限为 `0600`（仅当前用户可读写）。2.0 测试版存入钥匙串的值会在首次启动时写回该文件，并从钥匙串删除。系统此时可能弹窗请求访问钥匙串，选「始终允许」即可；选「拒绝」的项会被跳过（之后在「更新 Token」中重新填写），以后不会再弹窗。
 - 车辆照片限制 12 MB，并用 ImageIO 验证格式；所有 JSON 和照片只写入 Application Support。
 
-> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.4`。
+> `v1.10.0` 继续作为 Electron 稳定版保留。原生版当前版本为 `v2.1.5`。
 
 ### 车辆看板卡片
 
@@ -70,7 +70,7 @@
 ## 下载
 
 从 [GitHub Releases](https://github.com/real3841/nio-dash-v2/releases/latest) 下载
-`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.4.app`）。
+`NIO-Dash-<版本>-arm64.zip`，解压后打开 **NIO-Dash_<版本>.app**（如 `NIO-Dash_2.1.5.app`）。
 
 当前预编译版本面向 **Apple Silicon**。Intel Mac 可按下方步骤从源码构建。
 
@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.4`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.5`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
 
 原生 DMG：
 
@@ -301,6 +301,15 @@ GET https://icar.nio.com/api/2/rvs/vehicle/<vehicle_id>/status?...
 | `npm run serve:api` | 仅 API 服务 |
 
 ## 更新日志
+
+### v2.1.5
+
+- **坐标基准修正**：蔚来接口返回的经纬度实测为 GCJ-02。此前行程起终点被转成 WGS-84，而高德底图又做了一次 WGS→GCJ 纠偏，两个错误叠加导致轨迹整体偏移约 500 米、行程端点与轮询采样点断开。现在应用内部统一保存 GCJ-02 原始坐标，只在渲染到具体底图时转换（高德直接用，OSM 转 WGS-84）
+- **历史轨迹**：看板新增按月的历史行程轨迹，数据来自行程接口的逐点 `track`，不再依赖轮询采样拼凑。支持月份筛选、轨迹线 / 点云两种显示、深色底图
+- **自动同步**：启动 5 分钟后自动抓取；没有数据时回填 24 个月，之后每 24 小时刷新当月。也可手动「刷新当月」或「补全历史」，已抓过的月份自动跳过，可断点续传
+- **路径面板合并**：「历史轨迹」并入「行驶路径与历史轨迹」抽屉，与每日路径共用一个折叠区
+- **修复深色底图崩溃**：切换到深色底图时抛出 `undefined is not an object (evaluating 'this.options.subdomains.length')`，已补上子域占位数组
+- **浅色底图配色**：高德底图下轨迹改用青色并加粗，粉色在浅色地图上对比不足
 
 ### v2.1.4
 
