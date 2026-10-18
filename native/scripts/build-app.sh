@@ -22,6 +22,9 @@ BIN_DIR=$(swift build -c release --arch arm64 --show-bin-path)
 rm -rf "$OUTPUT_DIR"/*.app(N)
 mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources/web"
 cp "$BIN_DIR/NioDashboard" "$CONTENTS_DIR/MacOS/NioDashboard"
+# 剥掉调试符号：否则二进制里会留下 /Users/<用户名>/... 的绝对路径，
+# 把本机用户名和目录结构带到公开发布的安装包里
+strip -S -x "$CONTENTS_DIR/MacOS/NioDashboard" 2>/dev/null || strip -S "$CONTENTS_DIR/MacOS/NioDashboard" 2>/dev/null || true
 cp "$NATIVE_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$SHORT_VERSION" "$CONTENTS_DIR/Info.plist"
 cp "$NATIVE_DIR/Resources/PrivacyInfo.xcprivacy" "$CONTENTS_DIR/Resources/PrivacyInfo.xcprivacy"
