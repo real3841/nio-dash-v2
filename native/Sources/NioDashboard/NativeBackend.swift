@@ -296,9 +296,13 @@ final class NativeBackend: @unchecked Sendable {
         vehicle["NIO_CHECKIN_ACCESS_TOKEN"] = .string("")
         var change = section(changeKeys).object ?? [:]
         change["NIO_CHANGE_ACCESS_TOKEN"] = .string("")
+        // JS API 的 Key 与安全密钥天生暴露在客户端（否则高德 SDK 无法工作），
+        // 可以下发给前端；Web 服务 Key 是服务端凭据，必须继续抹掉。
         let map = Dictionary(uniqueKeysWithValues: [
-            "NIO_AMAP_WEB_SERVICE_KEY", "NIO_AMAP_JS_KEY", "NIO_AMAP_JS_SECURITY_CODE",
-        ].map { ($0, JSONValue.string("")) })
+            ("NIO_AMAP_WEB_SERVICE_KEY", JSONValue.string("")),
+            ("NIO_AMAP_JS_KEY", JSONValue.string(env["NIO_AMAP_JS_KEY"] ?? "")),
+            ("NIO_AMAP_JS_SECURITY_CODE", JSONValue.string(env["NIO_AMAP_JS_SECURITY_CODE"] ?? "")),
+        ])
 
         return try .json(.object([
             "ok": .bool(true),
