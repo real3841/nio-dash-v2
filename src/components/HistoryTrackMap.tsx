@@ -162,7 +162,8 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   const [reloadToken, setReloadToken] = useState(0);
   const [syncStatus, setSyncStatus] = useState<TrackSyncStatus | null>(null);
 
-  const tileConfig = useDark ? DARK_TILES : appTiles;
+  /** 应用设置里解析出的浅色底图（高德或 OSM）。深色如何处理由 base 决定 */
+  const tileConfig = appTiles;
 
   useEffect(() => {
     if (!open) return;
@@ -297,7 +298,7 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   /** 高德底图 + 深色：给栅格瓦片加反色滤镜，保留中文路名 */
   const darkAmap = useDark && tileConfig.provider === "amap";
   /** 没有高德 Key 时，深色退回 Esri 深灰底图 */
-  const base = useDark && tileConfig.provider !== "amap" ? DARK_TILES : tileConfig;
+  const base = useDark && !darkAmap ? DARK_TILES : tileConfig;
 
   const body = (
     <>
