@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import pkg from "../package.json";
 import { ApiSettings, type SyncTarget } from "./components/ApiSettings";
 import { DashboardCards } from "./components/DashboardCards";
@@ -73,14 +73,7 @@ import {
   useNativeEventsInsteadOfPolling,
 } from "./platform/native-events";
 import { initialNativeRoute, onNativeNavigate } from "./platform/routes";
-
-const DailyPathMap = lazy(() =>
-  import("./components/DailyPathMap").then((m) => ({ default: m.DailyPathMap })),
-);
-
-const HistoryTrackMap = lazy(() =>
-  import("./components/HistoryTrackMap").then((m) => ({ default: m.HistoryTrackMap })),
-);
+import { PathPanel } from "./components/PathPanel";
 
 const VISIBILITY_API_MIN_MS = 5 * 60 * 1000;
 const FETCH_META_STALE_MS = 90 * 1000;
@@ -790,21 +783,15 @@ export default function App() {
         pollPills={pollPills}
       />
 
-      <Suspense fallback={<section className="panel muted">地图加载中…</section>}>
-        <DailyPathMap
-          history={history}
-          journeys={journeyHistory}
-          current={{
-            lat: currentWgs.lat,
-            lng: currentWgs.lng,
-            ts: posTs,
-          }}
-        >
-          <Suspense fallback={<p className="muted">历史轨迹加载中…</p>}>
-            <HistoryTrackMap embedded />
-          </Suspense>
-        </DailyPathMap>
-      </Suspense>
+      <PathPanel
+        history={history}
+        journeys={journeyHistory}
+        current={{
+          lat: currentWgs.lat,
+          lng: currentWgs.lng,
+          ts: posTs,
+        }}
+      />
 
       {changeData && <SwapHistory data={changeData} />}
 

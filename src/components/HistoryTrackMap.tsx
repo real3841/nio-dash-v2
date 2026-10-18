@@ -79,15 +79,17 @@ function TrackLayer({
   mode,
   tileConfig,
   boundsKey,
+  light,
 }: {
   trips: TrackTrip[];
   mode: "line" | "dot";
   tileConfig: MapTileConfig;
   boundsKey: string;
+  light: boolean;
 }) {
   const map = useMap();
   const fitted = useRef<string>("");
-  const isLight = tileConfig.provider === "amap";
+  const isLight = light;
   const lineColor = isLight ? COLOR_LIGHT : COLOR_DARK;
   const dotColor = isLight ? COLOR_DOT_LIGHT : COLOR_DOT_DARK;
 
@@ -402,11 +404,20 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
                 maxZoom={tileConfig.maxZoom}
                 subdomains={tileConfig.subdomains ?? ["a"]}
               />
+              {useDark && (
+                <TileLayer
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+                  maxZoom={16}
+                  subdomains={["a"]}
+                  opacity={0.85}
+                />
+              )}
               <TrackLayer
                 trips={trips}
                 mode={mode}
                 tileConfig={tileConfig}
-                boundsKey={`${boundsKey}-${tileConfig.provider}`}
+                boundsKey={`${boundsKey}-${useDark ? "dark" : "light"}`}
+                light={!useDark}
               />
             </MapContainer>
           </div>

@@ -237,6 +237,8 @@ interface DailyPathMapProps {
   current?: { lat: number; lng: number; ts: number } | null;
   /** 折叠区里追加的内容（历史轨迹等） */
   children?: React.ReactNode;
+  /** 嵌入到父级折叠区时使用：不渲染 details/summary，内容始终展开 */
+  embedded?: boolean;
 }
 
 function formatDistance(km: number): string {
@@ -276,11 +278,12 @@ function TripSummary({ trip }: { trip: DrivingTrip }) {
   );
 }
 
-export function DailyPathMap({ history, journeys, current, children }: DailyPathMapProps) {
+export function DailyPathMap({ history, journeys, current, children, embedded = false }: DailyPathMapProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTripIndex, setSelectedTripIndex] = useState<number | null>(null);
   const [hoverTripIndex, setHoverTripIndex] = useState<number | null>(null);
-  const [open, setOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const open = embedded || drawerOpen;
   const [tileConfig, setTileConfig] = useState<MapTileConfig>(() => mapTileFromEnv({}));
 
   const dailyPaths = useMemo(() => {
@@ -369,15 +372,18 @@ export function DailyPathMap({ history, journeys, current, children }: DailyPath
       className="trend-drawer path-drawer"
       open={open}
       onToggle={(e) => {
+        if (embedded) return;
         const next = (e.currentTarget as HTMLDetailsElement).open;
-        setOpen(next);
+        setDrawerOpen(next);
         saveDrawerOpen(PATH_DRAWER_KEY, next);
       }}
     >
-      <summary>
-        <span>行驶路径与历史轨迹</span>
-        <span className="drawer-summary-meta">{summaryMeta}</span>
-      </summary>
+      {!embedded && (
+        <summary>
+          <span>行驶路径</span>
+          <span className="drawer-summary-meta">{summaryMeta}</span>
+        </summary>
+      )}
 
       {open && dailyPaths.length === 0 && (
         <p className="muted path-empty">
