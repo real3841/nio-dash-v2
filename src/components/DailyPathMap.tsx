@@ -10,8 +10,10 @@ import {
   formatCoordLabel,
   journeySnapshots,
   localDayKey,
+  type DailyPath,
   type DrivingTrip,
 } from "../lib/path-history";
+import { dayLabel } from "../lib/date-utils";
 import type { JourneyHistoryItem } from "../lib/trip";
 import { PATH_DRAWER_KEY, saveDrawerOpen } from "../lib/drawer-state";
 import { fetchEnvConfig } from "../lib/env-config";
@@ -247,6 +249,88 @@ function formatDistance(km: number): string {
   return `${Math.round(km * 1000)} m`;
 }
 
+interface RawTrackTrip {
+  s: number;
+  e: number;
+  k: number;
+  c: number;
+  /** [经度, 纬度, 时间戳（秒）] */
+  p: [number, number, number][];
+}
+
+interface RawTrackMonth {
+  month: string;
+  trips: RawTrackTrip[];
+}
+
+/**
+ * 用行程接口的逐点 track 构建按天的路径。
+ * 轮询采样 15–30 分钟才有一个点，画出来的路径是一段段直线；
+ * 行程接口的轨迹是车端上报的完整轨迹，精度高得多。
+ */
+function trackTripsToDailyPaths(months: RawTrackMonth[]): DailyPath[] {
+  const byDay = new Map<string, DrivingTrip[]>();
+
+  for (const month of months) {
+    for (const trip of month.trips ?? []) {
+      const raw = (trip.p ?? []).filter((point) => point[2] > 0);
+      if (raw.length < 2) continue;
+
+      const points: VehicleSnapshot[] = raw.map(([lng, lat, ts]) => ({
+        ts: ts * 1000,
+        lat,
+        lng,
+        vehicleState: 1,
+        soc: 0,
+        range: 0,
+        actualRange: 0,
+        mileage: 0,
+        insideTemp: 0,
+        outsideTemp: 0,
+      }));
+
+      const first = points[0];
+      const last = points[points.length - 1];
+      const day = localDayKey(first.ts);
+      const item: DrivingTrip = {
+        index: 0,
+        points,
+        startTime: first.ts,
+        endTime: last.ts,
+        distanceKm: trip.k > 0 ? trip.k : 0,
+        startLat: first.lat,
+        startLng: first.lng,
+        endLat: last.lat,
+        endLng: last.lng,
+        fromVehicleState: true,
+      };
+
+      const bucket = byDay.get(day);
+      if (bucket) bucket.push(item);
+      else byDay.set(day, [item]);
+    }
+  }
+
+  const paths: DailyPath[] = [];
+  for (const [day, trips] of byDay) {
+    trips.sort((a, b) => a.startTime - b.startTime);
+    trips.forEach((trip, i) => {
+      trip.index = i + 1;
+    });
+    paths.push({
+      day,
+      label: dayLabel(day),
+      points: trips.flatMap((trip) => trip.points),
+      trips,
+      distanceKm: trips.reduce((sum, trip) => sum + trip.distanceKm, 0),
+      startTime: trips[0]?.startTime ?? 0,
+      endTime: trips[trips.length - 1]?.endTime ?? 0,
+    });
+  }
+
+  return paths.sort((a, b) => b.day.localeCompare(a.day));
+}
+
 /**
  * 蔚来返回的坐标是 GCJ-02：
  * - 高德底图同为 GCJ-02，直接用原始坐标
@@ -285,11 +369,41 @@ export function DailyPathMap({ history, journeys, current, children, embedded = 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const open = embedded || drawerOpen;
   const [tileConfig, setTileConfig] = useState<MapTileConfig>(() => mapTileFromEnv({}));
+  /** 用行程接口的完整轨迹构建的按天路径；拿不到时回退到轮询采样 */
+  const [trackPaths, setTrackPaths] = useState<DailyPath[] | null>(null);
 
   const dailyPaths = useMemo(() => {
     if (!open) return [];
+    if (trackPaths && trackPaths.length > 0) return trackPaths;
     return buildDailyPaths(journeys?.length ? [...history, ...journeySnapshots(journeys)] : history);
-  }, [history, journeys, open]);
+  }, [history, journeys, open, trackPaths]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const indexRes = await fetch(`/data/tracks-index.json?_=${Date.now()}`);
+        if (!indexRes.ok) throw new Error("没有轨迹索引");
+        const index = (await indexRes.json()) as { months?: { month: string }[] };
+        const recent = (index.months ?? []).slice(-2).map((m) => m.month);
+        if (!recent.length) throw new Error("没有月份");
+        const months = await Promise.all(
+          recent.map(async (month) => {
+            const res = await fetch(`/data/tracks-${month}.json?_=${Date.now()}`);
+            return res.ok ? ((await res.json()) as RawTrackMonth) : null;
+          }),
+        );
+        if (cancelled) return;
+        setTrackPaths(trackTripsToDailyPaths(months.filter((m): m is RawTrackMonth => m !== null)));
+      } catch {
+        if (!cancelled) setTrackPaths(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -387,7 +501,8 @@ export function DailyPathMap({ history, journeys, current, children, embedded = 
 
       {open && dailyPaths.length === 0 && (
         <p className="muted path-empty">
-          开启车辆自动拉取后，系统会记录每次采样的经纬度；行驶中（vehicle_state=1）的连续采样会合并为一段行程。
+          没有找到行驶记录。历史轨迹同步完成后，这里会按天显示完整的行程轨迹；
+          在此之前会退回到轮询采样点。
         </p>
       )}
 
