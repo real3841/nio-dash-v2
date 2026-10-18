@@ -72,6 +72,7 @@ const PALETTE: { id: string; label: string; line: string; dot: string }[] = [
   { id: "amber", label: "橙黄", line: "#fbbf24", dot: "#fcd34d" },
   { id: "violet", label: "紫色", line: "#a78bfa", dot: "#c4b5fd" },
   { id: "red", label: "朱红", line: "#fb7185", dot: "#fda4af" },
+  { id: "china", label: "中国红", line: "#e60012", dot: "#ff4d4f" },
   { id: "white", label: "雪白", line: "#f8fafc", dot: "#e2e8f0" },
 ];
 
