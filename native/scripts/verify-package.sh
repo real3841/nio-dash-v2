@@ -15,6 +15,11 @@ if [[ -d "$TARGET" ]]; then
     print -u2 "隐私检查失败：缺少 PrivacyInfo.xcprivacy"
     exit 1
   }
+  # 二进制里不得残留 /Users/<用户名>/... 这类本机绝对路径
+  if strings "$TARGET/Contents/MacOS/NioDashboard" | /usr/bin/grep -q "/Users/"; then
+    print -u2 "隐私检查失败：二进制残留本机路径（/Users/...），请确认 strip 生效"
+    exit 1
+  fi
   ARCHS=$(lipo -archs "$TARGET/Contents/MacOS/NioDashboard")
   [[ "$ARCHS" == "arm64" ]] || {
     print -u2 "架构检查失败：预期 arm64，实际 $ARCHS"
@@ -39,4 +44,9 @@ print -r -- "$FILE_LIST" | /usr/bin/grep -Eiq "$FORBIDDEN_PATTERN" && {
   print -u2 "隐私检查失败：ZIP 含运行期数据或 Electron/Node 文件"
   exit 1
 }
+# 同样检查 ZIP 内二进制有没有本机路径
+if unzip -p "$TARGET" "*/Contents/MacOS/NioDashboard" 2>/dev/null | strings | /usr/bin/grep -q "/Users/"; then
+  print -u2 "隐私检查失败：ZIP 内二进制残留本机路径（/Users/...），请确认 strip 生效"
+  exit 1
+fi
 print "验证通过：$SIZE bytes"

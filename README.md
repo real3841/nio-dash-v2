@@ -105,7 +105,7 @@ npm run native:test
 npm run native:pack
 ```
 
-产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.6`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物。
+产物位于 `release-native/NIO-Dash-<版本>-arm64.zip`，应用为 `NIO-Dash_<版本>.app`（版本号取自 `package.json`，当前为 `2.1.6`）。每次打包会删除 `release-native/` 下旧版本的 `.app`，只保留各版本的压缩包。脚本会验证签名、arm64 架构、30 MB 体积预算，并拒绝包含 `config.env`、HAR、车辆 JSON、照片、Electron 或 Node 的产物；打包时会剥离调试符号，二进制里若残留 `/Users/...` 这类本机绝对路径，验证会直接失败。
 
 原生 DMG：
 
