@@ -15,6 +15,7 @@
     "fetch:vehicle": "tsx scripts/fetch-vehicle.ts",
     "fetch:change": "tsx scripts/fetch-change.ts",
     "fetch:checkin": "tsx scripts/fetch-checkin.ts --force",
+    "tracks:fetch": "tsx scripts/fetch-tracks.ts",
     "fetch:watch": "tsx scripts/fetch-all.ts --watch",
     "fetch:serve": "tsx scripts/fetch-all.ts --watch --serve",
     "serve:api": "tsx scripts/fetch-all.ts --serve",

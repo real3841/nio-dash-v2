@@ -78,6 +78,10 @@ const DailyPathMap = lazy(() =>
   import("./components/DailyPathMap").then((m) => ({ default: m.DailyPathMap })),
 );
 
+const HistoryTrackMap = lazy(() =>
+  import("./components/HistoryTrackMap").then((m) => ({ default: m.HistoryTrackMap })),
+);
+
 const VISIBILITY_API_MIN_MS = 5 * 60 * 1000;
 const FETCH_META_STALE_MS = 90 * 1000;
 const POLL_BOUNDARY_CHECK_MS = 60 * 1000;
@@ -796,6 +800,10 @@ export default function App() {
             ts: posTs,
           }}
         />
+      </Suspense>
+
+      <Suspense fallback={<section className="panel muted">历史轨迹加载中…</section>}>
+        <HistoryTrackMap />
       </Suspense>
 
       {changeData && <SwapHistory data={changeData} />}
