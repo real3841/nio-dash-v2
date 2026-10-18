@@ -5,6 +5,7 @@ import { fetchEnvConfig } from "../lib/env-config";
 import { mapCoordsForProvider } from "../lib/gcj02";
 import { saveDrawerOpen } from "../lib/drawer-state";
 import { mapTileFromEnv, type MapTileConfig } from "../lib/map-tiles";
+import { isNativeApp } from "../platform/transport";
 
 const TRACK_DRAWER_KEY = "nio-track-history-drawer";
 
@@ -37,6 +38,15 @@ interface TrackIndex {
   totalTrips: number;
   totalKm: number;
   totalPoints: number;
+}
+
+interface TrackSyncStatus {
+  running: boolean;
+  month: string | null;
+  done: number;
+  total: number;
+  lastError: string | null;
+  finishedAt: number | null;
 }
 
 /** 深色底图：Esri 的 Dark Gray，不需要 Key，用作可选的观感方案 */
@@ -136,6 +146,8 @@ export function HistoryTrackMap() {
   const [status, setStatus] = useState<"idle" | "loading" | "empty" | "ready">("idle");
   const [appTiles, setAppTiles] = useState<MapTileConfig>(() => mapTileFromEnv({}));
   const [useDark, setUseDark] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<TrackSyncStatus | null>(null);
 
   const tileConfig = useDark ? DARK_TILES : appTiles;
 
@@ -152,9 +164,11 @@ export function HistoryTrackMap() {
   }, [open]);
 
   useEffect(() => {
-    if (!open || index) return;
+    if (!open) return;
     let cancelled = false;
     setStatus("loading");
+    setIndex(null);
+    setMonths({});
     void (async () => {
       const idx = await fetchJson<TrackIndex>("/data/tracks-index.json");
       if (cancelled) return;
@@ -170,7 +184,50 @@ export function HistoryTrackMap() {
     return () => {
       cancelled = true;
     };
-  }, [open, index]);
+  }, [open, reloadToken]);
+
+  // 原生模式下轮询同步进度；结束后刷新索引
+  useEffect(() => {
+    if (!open || !isNativeApp()) return;
+    let timer = 0;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/tracks/status?_=${Date.now()}`);
+        if (res.ok) {
+          const next = (await res.json()) as TrackSyncStatus;
+          if (cancelled) return;
+          setSyncStatus((prev) => {
+            if (prev?.running && !next.running) setReloadToken((v) => v + 1);
+            return next;
+          });
+        }
+      } catch {
+        // 轮询失败忽略，下一轮重试
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 2500);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open]);
+
+  const startSync = async (months: number) => {
+    try {
+      const res = await fetch("/api/tracks/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ months, refreshCurrent: true }),
+      });
+      if (res.ok) setSyncStatus((await res.json()) as TrackSyncStatus);
+    } catch {
+      // 忽略，状态轮询会把结果带回来
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -246,15 +303,42 @@ export function HistoryTrackMap() {
       </summary>
 
       {open && status === "empty" && (
-        <p className="muted" style={{ padding: "12px 0" }}>
-          还没有轨迹数据。在项目目录运行 <code>npm run tracks:fetch</code> 抓取后重新打开。
-        </p>
+        <div className="muted" style={{ padding: "12px 0" }}>
+          <p style={{ margin: "0 0 10px" }}>还没有轨迹数据。</p>
+          {isNativeApp() ? (
+            <button type="button" onClick={() => void startSync(24)} style={segStyle(false)}>
+              开始抓取历史轨迹
+            </button>
+          ) : (
+            <p style={{ margin: 0 }}>
+              在项目目录运行 <code>npm run tracks:fetch</code> 抓取后重新打开。
+            </p>
+          )}
+        </div>
       )}
 
       {open && status === "loading" && <p className="muted">读取轨迹索引…</p>}
 
       {open && index && (
         <>
+          {isNativeApp() && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0 0" }}>
+              <button
+                type="button"
+                onClick={() => void startSync(24)}
+                disabled={syncStatus?.running}
+                style={{ ...segStyle(false), opacity: syncStatus?.running ? 0.5 : 1 }}
+              >
+                {syncStatus?.running ? "抓取中…" : "同步"}
+              </button>
+              <span className="muted" style={{ fontSize: 11 }}>
+                {syncStatus?.running
+                  ? `${syncStatus.month ?? ""} · ${syncStatus.done}/${syncStatus.total}`
+                  : (syncStatus?.lastError ?? "")}
+              </span>
+            </div>
+          )}
+
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0" }}>
             {index.months.map((m) => (
               <button

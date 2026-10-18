@@ -132,6 +132,20 @@ actor SyncCoordinator {
     private var running = Set<Target>()
     var onUpdated: (@Sendable (String) -> Void)?
 
+    // MARK: 历史轨迹同步状态
+
+    struct TrackState: Sendable {
+        var running = false
+        var month: String?
+        var done = 0
+        var total = 0
+        var lastError: String?
+        var finishedAt: Double?
+    }
+
+    private var trackState = TrackState()
+    private var trackTask: Task<Void, Never>?
+
     init(storage: AppStorage, keychain: KeychainStore, log: RedactedLog, session: URLSession? = nil) {
         self.storage = storage
         self.keychain = keychain
@@ -1056,6 +1070,7 @@ actor NativeScheduler {
         var nextVehicleAt: Date?
         var nextChangeAt: Date?
         var nextCheckinAt: Date?
+        var nextTracksAt: Date?
     }
 
     private let storage: AppStorage
@@ -1097,6 +1112,7 @@ actor NativeScheduler {
             "nextVehicleAt": state.nextVehicleAt.map { .number($0.timeIntervalSince1970 * 1000) } ?? .null,
             "nextChangeAt": state.nextChangeAt.map { .number($0.timeIntervalSince1970 * 1000) } ?? .null,
             "nextCheckinAt": state.nextCheckinAt.map { .number($0.timeIntervalSince1970 * 1000) } ?? .null,
+            "nextTracksAt": state.nextTracksAt.map { .number($0.timeIntervalSince1970 * 1000) } ?? .null,
         ])
     }
 
@@ -1118,6 +1134,12 @@ actor NativeScheduler {
                 state.nextCheckinAt = now.addingTimeInterval(300)
             }
         }
+        // 历史轨迹：首次跑全量回填，之后每天刷新当月
+        if let due = state.nextTracksAt, due <= now {
+            state.nextTracksAt = now.addingTimeInterval(86_400)
+            let hasIndex = (try? await storage.readJSON(relativePath: "tracks-index.json")) != nil
+            await sync.syncTrackHistory(monthsBack: hasIndex ? 1 : 24, refreshCurrent: true)
+        }
     }
 
     private func recalculate() {
@@ -1125,6 +1147,7 @@ actor NativeScheduler {
         state.nextVehicleAt = now.addingTimeInterval(10)
         state.nextChangeAt = now.addingTimeInterval(20)
         state.nextCheckinAt = nextNineAM(after: now.addingTimeInterval(-1))
+        state.nextTracksAt = now.addingTimeInterval(300)
     }
 
     private func vehicleInterval() async -> TimeInterval {
@@ -1195,5 +1218,265 @@ actor NativeScheduler {
             if let result = recursiveBool(keys, in: nested) { return result }
         }
         return nil
+    }
+}
+
+// MARK: - 历史轨迹
+
+extension SyncCoordinator {
+    func trackStatus() -> JSONValue {
+        .object([
+            "running": .bool(trackState.running),
+            "month": trackState.month.map { .string($0) } ?? .null,
+            "done": .number(Double(trackState.done)),
+            "total": .number(Double(trackState.total)),
+            "lastError": trackState.lastError.map { .string($0) } ?? .null,
+            "finishedAt": trackState.finishedAt.map { .number($0 * 1000) } ?? .null,
+        ])
+    }
+
+    /// 立即返回，实际抓取在后台进行；正在跑时重复调用会被忽略
+    func startTrackSync(monthsBack: Int, refreshCurrent: Bool) -> JSONValue {
+        guard !trackState.running else { return trackStatus() }
+        trackState.running = true
+        trackState.lastError = nil
+        trackState.month = nil
+        trackState.done = 0
+        trackState.total = 0
+        trackTask = Task { [weak self] in
+            await self?.runTrackSync(monthsBack: monthsBack, refreshCurrent: refreshCurrent)
+        }
+        return trackStatus()
+    }
+
+    func syncTrackHistory(monthsBack: Int, refreshCurrent: Bool) async {
+        guard !trackState.running else { return }
+        trackState.running = true
+        trackState.lastError = nil
+        await runTrackSync(monthsBack: monthsBack, refreshCurrent: refreshCurrent)
+    }
+
+    private func monthKey(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let parts = calendar.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", parts.year ?? 1970, parts.month ?? 1)
+    }
+
+    private func numberValue(_ value: JSONValue?) -> Double {
+        if case let .number(number)? = value { return number }
+        return 0
+    }
+
+    private func trackPoints(from value: JSONValue?) -> [JSONValue] {
+        guard case let .array(raw)? = value else { return [] }
+        var out: [JSONValue] = []
+        out.reserveCapacity(raw.count)
+        for point in raw {
+            guard case let .object(object) = point,
+                  case let .number(lng)? = object["longitude"],
+                  case let .number(lat)? = object["latitude"] else { continue }
+            out.append(.array([.number(lng), .number(lat), .number(numberValue(object["timestamp"]))]))
+        }
+        return out
+    }
+
+    private func runTrackSync(monthsBack: Int, refreshCurrent: Bool) async {
+        defer {
+            trackState.running = false
+            trackState.month = nil
+            trackState.finishedAt = Date().timeIntervalSince1970
+        }
+
+        let env = (try? await storage.environment(includingSecrets: true)) ?? [:]
+        guard let token = first(env, ["NIO_VEHICLE_ACCESS_TOKEN", "NIO_ACCESS_TOKEN"]), !token.isEmpty,
+              let vehicleID = first(env, ["NIO_VEHICLE_ID", "NIO_ID"]), !vehicleID.isEmpty else {
+            trackState.lastError = "缺少 Token 或车辆 ID"
+            return
+        }
+
+        var month = monthKey(Date())
+        var index = 0
+        while index < max(1, monthsBack), !month.isEmpty {
+            let path = "tracks-\(month).json"
+            let existing = try? await storage.readJSON(relativePath: path)
+            let shouldFetch = index == 0 ? (refreshCurrent || existing == nil) : existing == nil
+
+            if shouldFetch {
+                do {
+                    month = try await fetchTrackMonth(month, vehicleID: vehicleID, token: token, env: env)
+                    onUpdated?("tracks")
+                } catch {
+                    trackState.lastError = error.localizedDescription
+                    await log.append(
+                        category: "tracks",
+                        level: "warning",
+                        message: "历史轨迹 \(month) 失败：\(error.localizedDescription)"
+                    )
+                    break
+                }
+            } else {
+                month = existing?.object?["lastMonth"]?.string ?? ""
+            }
+            index += 1
+        }
+    }
+
+    @discardableResult
+    private func fetchTrackMonth(
+        _ month: String,
+        vehicleID: String,
+        token: String,
+        env: [String: String]
+    ) async throws -> String {
+        let payload = try await gatewayJSON(
+            env,
+            token: token,
+            appID: "1100461",
+            path: "/api/1/vehicle/\(vehicleID)/journey_merge/month_journeys",
+            query: [("month", month), ("last_month", ""), ("next_month", "")]
+        )
+        let data = payload.object?["data"]?.object
+        var items: [JSONValue] = []
+        if case let .array(list)? = data?["detail"] { items = list }
+        let lastMonth = data?["last_month"]?.string ?? ""
+
+        trackState.month = month
+        trackState.total = items.count
+        trackState.done = 0
+
+        var trips: [JSONValue] = []
+        trips.reserveCapacity(items.count)
+        for item in items {
+            guard case let .object(object) = item else { continue }
+            guard let id = object["trip_id"]?.string ?? object["journey_id"]?.string, !id.isEmpty else { continue }
+            if let trip = try? await fetchTrackTrip(id, vehicleID: vehicleID, token: token, env: env) {
+                trips.append(trip)
+            }
+            trackState.done += 1
+            try? await Task.sleep(for: .milliseconds(320))
+        }
+
+        var km = 0.0
+        var points = 0
+        for trip in trips {
+            guard case let .object(object) = trip else { continue }
+            km += numberValue(object["k"])
+            if case let .array(list)? = object["p"] { points += list.count }
+        }
+
+        try await storage.writeJSON(
+            .object([
+                "month": .string(month),
+                "lastMonth": .string(lastMonth),
+                "fetchedAt": .number(Date().timeIntervalSince1970 * 1000),
+                "trips": .array(trips),
+            ]),
+            relativePath: "tracks-\(month).json"
+        )
+        try await upsertTrackIndex(month: month, trips: trips.count, km: km, points: points)
+        await log.append(
+            category: "tracks",
+            level: "info",
+            message: "历史轨迹 \(month)：\(trips.count) 趟 · \(points) 点"
+        )
+        return lastMonth
+    }
+
+    private func fetchTrackTrip(
+        _ id: String,
+        vehicleID: String,
+        token: String,
+        env: [String: String]
+    ) async throws -> JSONValue {
+        let payload = try await gatewayJSON(
+            env,
+            token: token,
+            appID: "1100461",
+            path: "/api/1/vehicle/\(vehicleID)/journey_merge/\(id)",
+            query: []
+        )
+        guard case let .object(data)? = payload.object?["data"] else {
+            return .object(["s": .number(0), "e": .number(0), "k": .number(0), "c": .number(0), "p": .array([])])
+        }
+
+        var points = trackPoints(from: data["track"])
+        var combined = false
+
+        // 合并行程的父级轨迹可能被服务端截断，逐个取子行程再拼
+        if case let .array(atoms)? = data["atom_trips"], !atoms.isEmpty {
+            combined = true
+            var merged: [JSONValue] = []
+            for atom in atoms {
+                guard case let .object(object) = atom, let atomID = object["trip_id"]?.string else { continue }
+                if let sub = try? await gatewayJSON(
+                    env,
+                    token: token,
+                    appID: "1100461",
+                    path: "/api/1/vehicle/\(vehicleID)/journey_merge/\(atomID)",
+                    query: []
+                ), case let .object(subData)? = sub.object?["data"] {
+                    merged.append(contentsOf: trackPoints(from: subData["track"]))
+                }
+                try? await Task.sleep(for: .milliseconds(320))
+            }
+            if merged.count > points.count { points = merged }
+        }
+
+        let km = numberValue(data["trip_odometer"])
+        return .object([
+            "s": .number(numberValue(data["start_time"])),
+            "e": .number(numberValue(data["end_time"])),
+            "k": .number((km * 10).rounded() / 10),
+            "c": .number(combined ? 1 : 0),
+            "p": .array(points),
+        ])
+    }
+
+    private func upsertTrackIndex(month: String, trips: Int, km: Double, points: Int) async throws {
+        var months: [JSONValue] = []
+        if let existing = try? await storage.readJSON(relativePath: "tracks-index.json"),
+           case let .object(object) = existing,
+           case let .array(list)? = object["months"] {
+            months = list.filter { value in
+                guard case let .object(item) = value, case let .string(name)? = item["month"] else { return false }
+                return name != month
+            }
+        }
+
+        months.append(.object([
+            "month": .string(month),
+            "trips": .number(Double(trips)),
+            "km": .number((km * 10).rounded() / 10),
+            "points": .number(Double(points)),
+        ]))
+        months.sort { lhs, rhs in
+            func key(_ value: JSONValue) -> String {
+                if case let .object(item) = value, case let .string(name)? = item["month"] { return name }
+                return ""
+            }
+            return key(lhs) < key(rhs)
+        }
+
+        var totalTrips = 0.0
+        var totalKm = 0.0
+        var totalPoints = 0.0
+        for value in months {
+            guard case let .object(item) = value else { continue }
+            totalTrips += numberValue(item["trips"])
+            totalKm += numberValue(item["km"])
+            totalPoints += numberValue(item["points"])
+        }
+
+        try await storage.writeJSON(
+            .object([
+                "generatedAt": .string(ISO8601DateFormatter().string(from: Date())),
+                "months": .array(months),
+                "totalTrips": .number(totalTrips),
+                "totalKm": .number((totalKm * 10).rounded() / 10),
+                "totalPoints": .number(totalPoints),
+            ]),
+            relativePath: "tracks-index.json"
+        )
     }
 }

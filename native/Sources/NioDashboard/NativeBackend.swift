@@ -211,6 +211,13 @@ final class NativeBackend: @unchecked Sendable {
             return try .json(.object(["ok": .bool(false), "error": .string("not_found")]), status: 404)
         case ("/api/stock-watch", "GET"):
             return try await stockWatchResponse()
+        case ("/api/tracks/status", "GET"):
+            return try .json(await sync.trackStatus())
+        case ("/api/tracks/sync", "POST"):
+            let body = (try? decodeObject(request.body)) ?? [:]
+            let months = max(1, min(120, (body["months"] as? NSNumber)?.intValue ?? 12))
+            let refresh = (body["refreshCurrent"] as? NSNumber)?.boolValue ?? true
+            return try .json(await sync.startTrackSync(monthsBack: months, refreshCurrent: refresh))
         case ("/api/stock-watch/check", "POST"):
             do {
                 try await sync.refresh(.stock)
