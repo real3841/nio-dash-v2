@@ -33,19 +33,47 @@ const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 const MONTHS = Number(arg("months", "6"));
 const DELAY_MS = Number(arg("delay", "1100"));
 const FORCE = flag("force");
-const OUT_DIR = path.resolve(arg("out", path.join("public", "data"))!);
 const ENV_FILE = arg("env");
+const OUT_ARG = arg("out");
 
-for (const candidate of ENV_FILE ? [ENV_FILE] : [path.join(ROOT, "deploy", ".env"), path.join(ROOT, ".env")]) {
-  if (fs.existsSync(candidate)) loadEnv({ path: candidate });
+const APP_SUPPORT = path.join(process.env.HOME ?? "", "Library", "Application Support");
+
+/**
+ * 找配置文件：显式 --env 优先；否则依次尝试项目内 deploy/.env、.env，
+ * 以及 macOS 上 App 自己的 config.env（原生版与开发版两个目录都看一眼）。
+ */
+function resolveEnvFile(): string | undefined {
+  if (ENV_FILE) return path.resolve(ENV_FILE);
+  const candidates = [
+    path.join(ROOT, "deploy", ".env"),
+    path.join(ROOT, ".env"),
+    path.join(APP_SUPPORT, "蔚来车辆看板", "config.env"),
+    path.join(APP_SUPPORT, "nio-mac", "config.env"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate));
 }
+
+const ENV_PATH = resolveEnvFile();
+if (ENV_PATH) loadEnv({ path: ENV_PATH });
+
+// 配置文件在 App 数据目录时，默认输出到同级的 data/，省得每次手写 --out
+const defaultOut =
+  ENV_PATH && ENV_PATH.startsWith(APP_SUPPORT)
+    ? path.join(path.dirname(ENV_PATH), "data")
+    : path.join("public", "data");
+const OUT_DIR = path.resolve(OUT_ARG ?? defaultOut);
 
 const TOKEN = process.env.NIO_VEHICLE_ACCESS_TOKEN?.trim() ?? "";
 const VID = process.env.NIO_VEHICLE_ID?.trim() ?? "";
 const TOKEN_APP_ID = process.env.NIO_TOKEN_APP_ID?.trim() || "10002";
 
 if (!TOKEN || !VID) {
-  console.error("缺少 NIO_VEHICLE_ACCESS_TOKEN 或 NIO_VEHICLE_ID，请确认配置文件");
+  console.error(
+    ENV_PATH
+      ? `配置文件 ${ENV_PATH} 里缺少 NIO_VEHICLE_ACCESS_TOKEN 或 NIO_VEHICLE_ID`
+      : "没有找到配置文件。请用 --env 指定，例如：\n" +
+        '  npm run tracks:fetch -- --env "$HOME/Library/Application Support/蔚来车辆看板/config.env"',
+  );
   process.exit(1);
 }
 
@@ -256,6 +284,7 @@ async function main(): Promise<void> {
   }).format(new Date());
 
   let month = today.slice(0, 7);
+  console.log(`配置：${ENV_PATH ?? "(未找到)"}`);
   console.log(`开始抓取：目标 ${MONTHS} 个月，起始 ${month}，输出到 ${OUT_DIR}`);
 
   let lastMonth = "";
