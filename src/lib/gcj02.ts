@@ -55,7 +55,7 @@ export function mapCoordsFromGcj02(lat: number, lng: number): { lat: number; lng
   return gcj02ToWgs84(lng, lat);
 }
 
-/** WGS-84 → GCJ-02，供高德底图显示已存 WGS 轨迹时使用 */
+/** WGS-84 → GCJ-02。注意：蔚来返回的坐标已经是 GCJ-02，显示到高德底图时不要用它。 */
 export function wgs84ToGcj02(lng: number, lat: number): { lat: number; lng: number } {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { lat, lng };
   if (lng < 72 || lng > 138 || lat < 0.8 || lat > 56) return { lat, lng };
@@ -73,13 +73,20 @@ export function wgs84ToGcj02(lng: number, lat: number): { lat: number; lng: numb
   };
 }
 
+/**
+ * 蔚来接口返回的经纬度经实测确认为 GCJ-02（与 OSM 路网比对：中位偏差 2.3 米，
+ * 若按 WGS-84 解释则为 21.5 米）。
+ *
+ * - 高德底图本身就使用 GCJ-02，直接使用原始坐标，**不能再做转换**
+ * - OSM / Nominatim 使用 WGS-84，需要 gcj02ToWgs84
+ */
 export function mapCoordsForProvider(
   lat: number,
   lng: number,
   provider: "osm" | "amap",
 ): { lat: number; lng: number } {
   if (provider === "amap") {
-    return wgs84ToGcj02(lng, lat);
+    return { lat, lng };
   }
   return mapCoordsFromGcj02(lat, lng);
 }

@@ -15,7 +15,7 @@ import {
 import type { JourneyHistoryItem } from "../lib/trip";
 import { PATH_DRAWER_KEY, saveDrawerOpen } from "../lib/drawer-state";
 import { fetchEnvConfig } from "../lib/env-config";
-import { wgs84ToGcj02 } from "../lib/gcj02";
+import { mapCoordsFromGcj02 } from "../lib/gcj02";
 import { mapTileFromEnv, type MapTileConfig } from "../lib/map-tiles";
 import { isValidGps, type VehicleSnapshot } from "../lib/vehicle";
 
@@ -243,16 +243,21 @@ function formatDistance(km: number): string {
   return `${Math.round(km * 1000)} m`;
 }
 
+/**
+ * 蔚来返回的坐标是 GCJ-02：
+ * - 高德底图同为 GCJ-02，直接用原始坐标
+ * - OSM 底图是 WGS-84，需要换算
+ */
 function toMapCoords(
   lat: number,
   lng: number,
   provider: MapTileConfig["provider"],
 ): [number, number] {
   if (provider === "amap") {
-    const gcj = wgs84ToGcj02(lng, lat);
-    return [gcj.lat, gcj.lng];
+    return [lat, lng];
   }
-  return [lat, lng];
+  const wgs = mapCoordsFromGcj02(lat, lng);
+  return [wgs.lat, wgs.lng];
 }
 
 function tripPositions(trip: DrivingTrip, provider: MapTileConfig["provider"]): [number, number][] {

@@ -1,18 +1,21 @@
 import { dayLabel, fmtClock, localDayKey } from "./date-utils";
-import { mapCoordsFromGcj02 } from "./gcj02";
 import { isDrivingVehicleState } from "./poll-schedule";
 import type { JourneyHistoryItem } from "./trip";
 import { isValidGps, type VehicleSnapshot } from "./vehicle";
 
 export { fmtClock };
 
-/** 行程接口的起终点转成路径采样点：前后各加一个驻车点，让每段行程单独成段 */
+/**
+ * 行程接口的起终点转成路径采样点：前后各加一个驻车点，让每段行程单独成段。
+ * 蔚来返回的经纬度是 GCJ-02，这里保持原样，与轮询采样的 history 同一坐标系；
+ * 只在渲染到具体底图时才做转换（见 DailyPathMap 的 toMapCoords）。
+ */
 export function journeySnapshots(journeys: JourneyHistoryItem[]): VehicleSnapshot[] {
   const base = { soc: 0, range: 0, actualRange: 0, mileage: 0, insideTemp: 0, outsideTemp: 0 };
   const out: VehicleSnapshot[] = [];
   for (const j of journeys) {
-    const start = mapCoordsFromGcj02(j.start.lat, j.start.lng);
-    const end = mapCoordsFromGcj02(j.end.lat, j.end.lng);
+    const start = j.start;
+    const end = j.end;
     out.push(
       { ...base, ts: j.start_time - 1, lat: start.lat, lng: start.lng, vehicleState: 2 },
       { ...base, ts: j.start_time, lat: start.lat, lng: start.lng, vehicleState: 1 },
