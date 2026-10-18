@@ -6,6 +6,7 @@ import { mapCoordsForProvider } from "../lib/gcj02";
 import { saveDrawerOpen } from "../lib/drawer-state";
 import { mapTileFromEnv, type MapTileConfig } from "../lib/map-tiles";
 import { isNativeApp } from "../platform/transport";
+import { AmapTrackMap } from "./AmapTrackMap";
 
 const TRACK_DRAWER_KEY = "nio-track-history-drawer";
 
@@ -159,6 +160,9 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState<"idle" | "loading" | "empty" | "ready">("idle");
   const [appTiles, setAppTiles] = useState<MapTileConfig>(() => mapTileFromEnv({}));
   const [useDark, setUseDark] = useState(false);
+  const [amapKey, setAmapKey] = useState("");
+  const [amapCode, setAmapCode] = useState("");
+  const [amapFailed, setAmapFailed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [syncStatus, setSyncStatus] = useState<TrackSyncStatus | null>(null);
 
@@ -168,7 +172,11 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
     if (!open) return;
     const load = () => {
       void fetchEnvConfig()
-        .then((cfg) => setAppTiles(mapTileFromEnv(cfg.map)))
+        .then((cfg) => {
+          setAppTiles(mapTileFromEnv(cfg.map));
+          setAmapKey(cfg.map.NIO_AMAP_JS_KEY?.trim() ?? "");
+          setAmapCode(cfg.map.NIO_AMAP_JS_SECURITY_CODE?.trim() ?? "");
+        })
         .catch(() => setAppTiles(mapTileFromEnv({})));
     };
     load();
@@ -294,6 +302,8 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
   });
 
   const syncing = Boolean(syncStatus?.running);
+  /** 有高德 Key 且没加载失败时，用高德矢量地图（深色下也能显示中文路名） */
+  const useAmap = Boolean(amapKey) && !amapFailed;
 
   const body = (
     <>
@@ -385,41 +395,54 @@ export function HistoryTrackMap({ embedded = false }: { embedded?: boolean }) {
               深色
             </button>
             <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
-              {trips.length} 趟 · {shown.points.toLocaleString()} 点 · {tileConfig.provider === "amap" ? "高德" : "OSM"}
+              {trips.length} 趟 · {shown.points.toLocaleString()} 点 ·{" "}
+              {useAmap ? "高德矢量" : useDark ? "Esri 深色" : tileConfig.provider === "amap" ? "高德栅格" : "OSM"}
             </span>
           </div>
 
           <div style={{ height: 420, borderRadius: 12, overflow: "hidden" }}>
-            <MapContainer
-              key={`${tileConfig.provider}-${tileConfig.url}`}
-              center={[38.91, 121.6]}
-              zoom={11}
-              scrollWheelZoom
-              preferCanvas
-              style={{ height: "100%", width: "100%" }}
-            >
-              <TileLayer
-                url={tileConfig.url}
-                attribution={tileConfig.attribution}
-                maxZoom={tileConfig.maxZoom}
-                subdomains={tileConfig.subdomains ?? ["a"]}
-              />
-              {useDark && (
-                <TileLayer
-                  url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
-                  maxZoom={16}
-                  subdomains={["a"]}
-                  opacity={0.85}
-                />
-              )}
-              <TrackLayer
+            {useAmap ? (
+              <AmapTrackMap
                 trips={trips}
                 mode={mode}
-                tileConfig={tileConfig}
-                boundsKey={`${boundsKey}-${useDark ? "dark" : "light"}`}
-                light={!useDark}
+                dark={useDark}
+                boundsKey={boundsKey}
+                amapKey={amapKey}
+                securityCode={amapCode || undefined}
+                onError={() => setAmapFailed(true)}
               />
-            </MapContainer>
+            ) : (
+              <MapContainer
+                key={`${tileConfig.provider}-${tileConfig.url}`}
+                center={[38.91, 121.6]}
+                zoom={11}
+                scrollWheelZoom
+                preferCanvas
+                style={{ height: "100%", width: "100%" }}
+              >
+                <TileLayer
+                  url={tileConfig.url}
+                  attribution={tileConfig.attribution}
+                  maxZoom={tileConfig.maxZoom}
+                  subdomains={tileConfig.subdomains ?? ["a"]}
+                />
+                {useDark && (
+                  <TileLayer
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+                    maxZoom={16}
+                    subdomains={["a"]}
+                    opacity={0.85}
+                  />
+                )}
+                <TrackLayer
+                  trips={trips}
+                  mode={mode}
+                  tileConfig={tileConfig}
+                  boundsKey={`${boundsKey}-${useDark ? "dark" : "light"}`}
+                  light={!useDark}
+                />
+              </MapContainer>
+            )}
           </div>
         </>
       )}
