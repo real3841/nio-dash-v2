@@ -4184,3 +4184,9 @@ html.look-adjust .app {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* 深色模式下的高德栅格瓦片：只对瓦片层反色，轨迹层不受影响，
+   这样既保留中文路名，又不必依赖高德的矢量自定义样式接口。 */
+.nio-dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.75);
+}
