@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { mapCoordsFromGcj02 } from "../lib/gcj02";
+import { fetchEnvConfig } from "../lib/env-config";
+import { mapCoordsForProvider } from "../lib/gcj02";
 import { saveDrawerOpen } from "../lib/drawer-state";
+import { mapTileFromEnv, type MapTileConfig } from "../lib/map-tiles";
 
 const TRACK_DRAWER_KEY = "nio-track-history-drawer";
 
@@ -37,6 +39,14 @@ interface TrackIndex {
   totalPoints: number;
 }
 
+/** 深色底图：Esri 的 Dark Gray，不需要 Key，用作可选的观感方案 */
+const DARK_TILES: MapTileConfig = {
+  provider: "osm",
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+  maxZoom: 16,
+};
+
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
     const res = await fetch(`${path}?_=${Date.now()}`);
@@ -50,10 +60,12 @@ async function fetchJson<T>(path: string): Promise<T | null> {
 function TrackLayer({
   trips,
   mode,
+  tileConfig,
   boundsKey,
 }: {
   trips: TrackTrip[];
   mode: "line" | "dot";
+  tileConfig: MapTileConfig;
   boundsKey: string;
 }) {
   const map = useMap();
@@ -68,9 +80,9 @@ function TrackLayer({
       if (trip.p.length < 2) continue;
       const latlngs: [number, number][] = [];
       for (const p of trip.p) {
-        // 原始坐标是 GCJ-02，OSM/Esri 底图需要 WGS-84
-        const wgs = mapCoordsFromGcj02(p[1], p[0]);
-        latlngs.push([wgs.lat, wgs.lng]);
+        // 高德底图用 GCJ-02 原始坐标；OSM / Esri 需要 WGS-84
+        const mapped = mapCoordsForProvider(p[1], p[0], tileConfig.provider);
+        latlngs.push([mapped.lat, mapped.lng]);
       }
 
       if (mode === "line") {
@@ -78,7 +90,7 @@ function TrackLayer({
           renderer,
           color: "#ff5ec8",
           weight: 1.2,
-          opacity: 0.42,
+          opacity: 0.45,
           interactive: false,
         }).addTo(group);
       } else {
@@ -89,7 +101,7 @@ function TrackLayer({
             radius: 1.1,
             stroke: false,
             fillColor: "#ff8ada",
-            fillOpacity: 0.55,
+            fillOpacity: 0.6,
             interactive: false,
           }).addTo(group);
         }
@@ -110,7 +122,7 @@ function TrackLayer({
     return () => {
       map.removeLayer(group);
     };
-  }, [map, trips, mode, boundsKey]);
+  }, [map, trips, mode, tileConfig.provider, boundsKey]);
 
   return null;
 }
@@ -122,8 +134,23 @@ export function HistoryTrackMap() {
   const [active, setActive] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"line" | "dot">("line");
   const [status, setStatus] = useState<"idle" | "loading" | "empty" | "ready">("idle");
+  const [appTiles, setAppTiles] = useState<MapTileConfig>(() => mapTileFromEnv({}));
+  const [useDark, setUseDark] = useState(false);
 
-  // 打开时读索引
+  const tileConfig = useDark ? DARK_TILES : appTiles;
+
+  useEffect(() => {
+    if (!open) return;
+    const load = () => {
+      void fetchEnvConfig()
+        .then((cfg) => setAppTiles(mapTileFromEnv(cfg.map)))
+        .catch(() => setAppTiles(mapTileFromEnv({})));
+    };
+    load();
+    window.addEventListener("nio-map-config-updated", load);
+    return () => window.removeEventListener("nio-map-config-updated", load);
+  }, [open]);
+
   useEffect(() => {
     if (!open || index) return;
     let cancelled = false;
@@ -145,7 +172,6 @@ export function HistoryTrackMap() {
     };
   }, [open, index]);
 
-  // 按需读月份文件
   useEffect(() => {
     if (!open) return;
     for (const month of active) {
@@ -183,6 +209,27 @@ export function HistoryTrackMap() {
 
   const boundsKey = useMemo(() => [...active].sort().join(","), [active]);
 
+  const chipStyle = (on: boolean): React.CSSProperties => ({
+    background: on ? "rgba(255,94,200,.16)" : "rgba(255,255,255,.05)",
+    border: `1px solid ${on ? "rgba(255,94,200,.5)" : "transparent"}`,
+    color: on ? "#ffb3e6" : "#8b93a7",
+    borderRadius: 7,
+    padding: "4px 9px",
+    fontSize: 11,
+    cursor: "pointer",
+    fontVariantNumeric: "tabular-nums",
+  });
+
+  const segStyle = (on: boolean): React.CSSProperties => ({
+    background: on ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)",
+    border: 0,
+    color: on ? "#e8ecf4" : "#8b93a7",
+    borderRadius: 7,
+    padding: "5px 14px",
+    fontSize: 11,
+    cursor: "pointer",
+  });
+
   return (
     <details
       className="trend-drawer"
@@ -209,64 +256,49 @@ export function HistoryTrackMap() {
       {open && index && (
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "10px 0" }}>
-            {index.months.map((m) => {
-              const on = active.has(m.month);
-              return (
-                <button
-                  key={m.month}
-                  type="button"
-                  onClick={() =>
-                    setActive((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(m.month)) next.delete(m.month);
-                      else next.add(m.month);
-                      return next;
-                    })
-                  }
-                  style={{
-                    background: on ? "rgba(255,94,200,.16)" : "rgba(255,255,255,.05)",
-                    border: `1px solid ${on ? "rgba(255,94,200,.5)" : "transparent"}`,
-                    color: on ? "#ffb3e6" : "#8b93a7",
-                    borderRadius: 7,
-                    padding: "4px 9px",
-                    fontSize: 11,
-                    cursor: "pointer",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {m.month.slice(2)}
-                  <span style={{ opacity: 0.6, marginLeft: 4 }}>{m.trips}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            {(["line", "dot"] as const).map((m) => (
+            {index.months.map((m) => (
               <button
-                key={m}
+                key={m.month}
                 type="button"
-                onClick={() => setMode(m)}
-                style={{
-                  background: mode === m ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)",
-                  border: 0,
-                  color: mode === m ? "#e8ecf4" : "#8b93a7",
-                  borderRadius: 7,
-                  padding: "5px 14px",
-                  fontSize: 11,
-                  cursor: "pointer",
-                }}
+                onClick={() =>
+                  setActive((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(m.month)) next.delete(m.month);
+                    else next.add(m.month);
+                    return next;
+                  })
+                }
+                style={chipStyle(active.has(m.month))}
               >
-                {m === "line" ? "轨迹线" : "点云"}
+                {m.month.slice(2)}
+                <span style={{ opacity: 0.6, marginLeft: 4 }}>{m.trips}</span>
               </button>
             ))}
-            <span className="muted" style={{ fontSize: 11, alignSelf: "center", marginLeft: "auto" }}>
-              {trips.length} 趟 · {shown.points.toLocaleString()} 点
+          </div>
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
+            <button type="button" onClick={() => setMode("line")} style={segStyle(mode === "line")}>
+              轨迹线
+            </button>
+            <button type="button" onClick={() => setMode("dot")} style={segStyle(mode === "dot")}>
+              点云
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseDark((v) => !v)}
+              style={{ ...segStyle(useDark), marginLeft: 8 }}
+              title="深色底图（Esri），不使用高德 Key"
+            >
+              深色
+            </button>
+            <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+              {trips.length} 趟 · {shown.points.toLocaleString()} 点 · {tileConfig.provider === "amap" ? "高德" : "OSM"}
             </span>
           </div>
 
           <div style={{ height: 420, borderRadius: 12, overflow: "hidden" }}>
             <MapContainer
+              key={`${tileConfig.provider}-${tileConfig.url}`}
               center={[38.91, 121.6]}
               zoom={11}
               scrollWheelZoom
@@ -274,12 +306,17 @@ export function HistoryTrackMap() {
               style={{ height: "100%", width: "100%" }}
             >
               <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-                attribution="Tiles &copy; Esri"
-                maxZoom={16}
-                maxNativeZoom={16}
+                url={tileConfig.url}
+                attribution={tileConfig.attribution}
+                maxZoom={tileConfig.maxZoom}
+                subdomains={tileConfig.subdomains}
               />
-              <TrackLayer trips={trips} mode={mode} boundsKey={boundsKey} />
+              <TrackLayer
+                trips={trips}
+                mode={mode}
+                tileConfig={tileConfig}
+                boundsKey={`${boundsKey}-${tileConfig.provider}`}
+              />
             </MapContainer>
           </div>
         </>
